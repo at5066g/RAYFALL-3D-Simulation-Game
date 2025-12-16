@@ -98,45 +98,58 @@ export const generateTextures = (): Record<number, Texture> => {
     ctx.fillRect(16, 28, 32, 8);
   });
 
-  // 51. Ammo Box
+  // 51. Ammo (Bullet Icon)
   textures[CellType.AMMO_BOX] = createTexture((ctx) => {
     // Transparent BG
     ctx.clearRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
-    
-    // Metallic Yellow Box
-    ctx.fillStyle = '#D4AF37'; // Gold
-    ctx.fillRect(16, 24, 32, 24);
-    
-    // Outline
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#8B6508';
-    ctx.strokeRect(16, 24, 32, 24);
 
-    // Lid line
+    const cx = 32;
+    const cy = 32;
+    const scale = 1.5;
+
+    // Glow
+    const grad = ctx.createRadialGradient(cx, cy, 10, cx, cy, 30);
+    grad.addColorStop(0, 'rgba(255, 215, 0, 0.8)');
+    grad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+    ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(16, 32);
-    ctx.lineTo(48, 32);
+    ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.translate(-cx, -cy);
+
+    // Bullet Casing (Brass)
+    ctx.fillStyle = '#B8860B'; // Dark Goldenrod
+    ctx.strokeStyle = '#554400';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.rect(26, 28, 12, 24);
+    ctx.fill();
     ctx.stroke();
 
-    // Bullet Icon
-    const centerX = 32;
-    const centerY = 36;
-
-    // Casing
-    ctx.fillStyle = '#B8860B'; // Dark Goldenrod
-    ctx.fillRect(centerX - 4, centerY - 6, 8, 14);
-
-    // Tip
-    ctx.fillStyle = '#C0C0C0'; // Silver
+    // Bullet Tip (Silver/Lead)
+    ctx.fillStyle = '#777777';
     ctx.beginPath();
-    ctx.moveTo(centerX - 4, centerY - 6);
-    ctx.lineTo(centerX, centerY - 12);
-    ctx.lineTo(centerX + 4, centerY - 6);
+    ctx.moveTo(26, 28);
+    ctx.quadraticCurveTo(32, 10, 38, 28);
     ctx.fill();
+    ctx.stroke();
 
     // Rim
     ctx.fillStyle = '#8B4513';
-    ctx.fillRect(centerX - 5, centerY + 8, 10, 2);
+    ctx.beginPath();
+    ctx.rect(25, 52, 14, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    // Shine
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillRect(28, 30, 2, 18);
+    
+    ctx.restore();
   });
 
   // 99. Enemy Guard

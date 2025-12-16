@@ -60,6 +60,8 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   const walkCycle = useRef(0);
   const lastStepTime = useRef(0);
   const reloadStartTime = useRef(0);
+  const recoilImpulse = useRef(0); // For smooth recoil animation
+  
   const [isShooting, setIsShooting] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const [isGameOver, setIsGameOver] = useState(false);
@@ -186,6 +188,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         score: 0,
     };
     lastSpawnTime.current = performance.now();
+    recoilImpulse.current = 0;
     setIsGameOver(false);
     setIsPaused(false);
     setIsReloading(false);
@@ -257,10 +260,13 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
     stateRef.current.player.ammo--;
     soundManager.current.playShoot();
+    
+    // Add recoil impulse
+    recoilImpulse.current = 1.0;
 
     setIsShooting(true);
     if (shootTimer.current) clearTimeout(shootTimer.current);
-    shootTimer.current = window.setTimeout(() => setIsShooting(false), 100);
+    shootTimer.current = window.setTimeout(() => setIsShooting(false), 50); // Shorter flash
 
     const { player, enemies, map } = stateRef.current;
     
@@ -467,17 +473,22 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         const dist = Math.sqrt(dx*dx + dy*dy);
         
         if (dist < 0.8) { 
-             if (item.textureId === CellType.HEALTH_ORB && player.health < 100) {
+             // Always consume item and play sound
+             if (item.textureId === CellType.HEALTH_ORB) {
                  soundManager.current.playHeal();
-                 player.health = Math.min(100, player.health + 30);
-                 lastHealTime.current = performance.now();
-                 items.splice(i, 1);
-             } else if (item.textureId === CellType.AMMO_BOX && player.ammoReserve < MAX_RESERVE) {
+                 if (player.health < 100) {
+                    player.health = Math.min(100, player.health + 30);
+                    lastHealTime.current = performance.now();
+                 }
+             } else if (item.textureId === CellType.AMMO_BOX) {
                  soundManager.current.playAmmoPickup();
-                 player.ammoReserve = Math.min(MAX_RESERVE, player.ammoReserve + CLIP_SIZE);
-                 lastPickupTime.current = performance.now();
-                 items.splice(i, 1);
+                 if (player.ammoReserve < MAX_RESERVE) {
+                    player.ammoReserve = Math.min(MAX_RESERVE, player.ammoReserve + CLIP_SIZE);
+                    lastPickupTime.current = performance.now();
+                 }
              }
+             // Removed condition, always remove item
+             items.splice(i, 1);
         }
     }
 
@@ -513,12 +524,18 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         walkCycle.current = 0;
     }
 
+    // Decay recoil
+    if (recoilImpulse.current > 0) {
+        recoilImpulse.current -= dt * 8; // Recover speed
+        if (recoilImpulse.current < 0) recoilImpulse.current = 0;
+    }
+
     if (weaponRef.current) {
         const bobAmplitude = isZooming.current ? 2 : 15;
         const bobOffset = isMoving ? Math.sin(walkCycle.current) * bobAmplitude : 0;
         const swayOffset = isMoving ? Math.cos(walkCycle.current * 0.5) * (bobAmplitude * 0.5) : 0;
         
-        let recoilY = isShooting ? (isZooming.current ? 20 : 50) : 0;
+        let recoilY = 0;
         let rotation = 0;
         let horizontalOffset = 0;
 
@@ -526,34 +543,54 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         if (isReloading) {
             const progress = (now - reloadStartTime.current) / RELOAD_TIME;
             
+            // 0% - 20%: Lower Weapon (0 - 400ms)
             if (progress < 0.2) {
-                // Phase 1: Lower weapon
                 recoilY += (progress / 0.2) * 150; 
-            } else if (progress < 0.7) {
-                // Phase 2: Hold low and tilt (Mag Swap)
+            } 
+            // 20% - 70%: Hold Low (400 - 1400ms) - "Mag Swap" logic
+            else if (progress < 0.7) {
                 recoilY += 150;
-                rotation = 10; 
-                // Shake during mag insertion
+                rotation = 10; // Tilt slightly
+                
+                // Shake during "Mag Insertion" ~ 0.4 (800ms) which aligns with sound
                 if (progress > 0.4 && progress < 0.5) {
-                    recoilY += Math.sin(progress * 100) * 5;
-                    horizontalOffset = Math.random() * 4 - 2;
+                    recoilY += Math.sin(progress * 100) * 10;
+                    horizontalOffset = Math.random() * 6 - 3;
                 }
-            } else if (progress < 0.9) {
-                // Phase 3: Raise weapon
-                const raiseProgress = (progress - 0.7) / 0.2;
+            } 
+            // 70% - 75%: Raise Weapon quickly (1400 - 1500ms)
+            else if (progress < 0.75) {
+                const raiseProgress = (progress - 0.7) / 0.05;
                 recoilY += 150 * (1 - raiseProgress);
                 rotation = 10 * (1 - raiseProgress);
-            } else {
-                 // Phase 4: Slide rack / Stabilize
-                 recoilY += Math.sin(progress * 50) * 5;
+            } 
+            // 75% - 85%: Slide Rack (1500 - 1700ms) - Aligns with sound
+            else if (progress < 0.85) {
+                 // Fast Jerk Back and Forth
+                 const rackProgress = (progress - 0.75) / 0.1;
+                 const rackOffset = Math.sin(rackProgress * Math.PI * 2) * 30; // 30px rack travel
+                 
+                 horizontalOffset += rackOffset * 0.2; // Slight horizontal movement
+                 recoilY += Math.abs(rackOffset) * 0.5; // Slight vertical kick from rack
+                 rotation -= rackOffset * 0.1; // Slight tilt
             }
+            // 85% - 100%: Stabilize
+            else {
+                 const stabilizeProgress = (progress - 0.85) / 0.15;
+                 recoilY += Math.sin(stabilizeProgress * Math.PI) * 2;
+            }
+        } else {
+             // Shooting Recoil Logic
+             const kick = recoilImpulse.current * recoilImpulse.current; // ease out
+             recoilY += kick * 60; // Kick back (down)
+             rotation -= kick * 5; // Slight tilt left/up
+             horizontalOffset += (Math.random() - 0.5) * kick * 20; // Random horizontal shake
         }
 
-        const recoilX = isShooting ? 10 : 0;
         const baseY = isZooming.current ? 40 : 30;
         
         weaponRef.current.style.transform = `
-            translateX(calc(-50% + ${swayOffset + recoilX + horizontalOffset}px)) 
+            translateX(calc(-50% + ${swayOffset + horizontalOffset}px)) 
             translateY(${baseY + Math.abs(bobOffset) + recoilY}px) 
             rotate(${rotation}deg)
             scale(${isZooming.current ? 1.2 : 1})
@@ -669,8 +706,11 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       {isZooming.current && (
          <div className="absolute inset-0 pointer-events-none z-20 bg-radial-gradient-scope"></div>
       )}
-      {isShooting && (
-          <div className="absolute inset-0 bg-yellow-500/20 pointer-events-none z-20 transition-opacity duration-75"></div>
+      {/* Enhanced Muzzle Flash */}
+      {isShooting && !isReloading && (
+          <div className="absolute bottom-[9rem] left-1/2 -translate-x-1/2 w-24 h-24 bg-yellow-300 rounded-full blur-xl opacity-80 z-30 pointer-events-none animate-pulse mix-blend-screen">
+               <div className="absolute inset-2 bg-white rounded-full blur-md opacity-90"></div>
+          </div>
       )}
 
       {/* Weapon Sprite */}
@@ -682,9 +722,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
          <div className="w-full h-full relative">
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-48 bg-gray-800 border-l-4 border-gray-600 rounded-t-lg"></div>
             <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-24 h-12 bg-black rounded-lg"></div>
-            {isShooting && (
-                <div className="absolute bottom-[8.5rem] left-1/2 -translate-x-1/2 w-16 h-16 bg-yellow-400 rounded-full blur-md opacity-80"></div>
-            )}
          </div>
       </div>
 
