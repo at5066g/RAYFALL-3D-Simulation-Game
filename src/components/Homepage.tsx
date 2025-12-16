@@ -1,0 +1,60 @@
+import React from 'react';
+import { Difficulty, type DifficultyLevel } from '../types';
+
+interface HomepageProps {
+  onStart: (difficulty: DifficultyLevel) => void;
+}
+
+export const Homepage: React.FC<HomepageProps> = ({ onStart }) => {
+  return (
+    <div className="relative z-10 flex flex-col items-center justify-center w-full max-w-2xl p-12 space-y-8 bg-black/80 border border-gray-700 rounded-lg shadow-2xl backdrop-blur-sm animate-in fade-in zoom-in duration-500">
+      <div className="text-center space-y-2">
+        <h1 className="text-6xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 font-mono">
+          RAYCASTER FPS
+        </h1>
+        <p className="text-gray-400 tracking-widest uppercase text-sm">Tactical shooter simulation</p>
+      </div>
+
+      <div className="w-full h-px bg-gradient-to-r from-transparent via-gray-500 to-transparent" />
+
+      <div className="grid grid-cols-1 w-full gap-4">
+        <button
+          onClick={() => onStart(Difficulty.EASY)}
+          className="group relative w-full px-8 py-4 bg-gray-900/50 hover:bg-green-900/30 border border-gray-600 hover:border-green-500 transition-all duration-300 overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-green-500/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+          <div className="relative flex items-center justify-between">
+            <span className="text-xl font-mono font-bold text-white group-hover:text-green-400">EASY RECRUIT</span>
+            <span className="text-xs text-gray-500 group-hover:text-green-300 font-mono uppercase tracking-wider">Standard Damage</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => onStart(Difficulty.MEDIUM)}
+          className="group relative w-full px-8 py-4 bg-gray-900/50 hover:bg-yellow-900/30 border border-gray-600 hover:border-yellow-500 transition-all duration-300 overflow-hidden"
+        >
+           <div className="absolute inset-0 bg-yellow-500/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+          <div className="relative flex items-center justify-between">
+            <span className="text-xl font-mono font-bold text-white group-hover:text-yellow-400">HARDENED VETERAN</span>
+            <span className="text-xs text-gray-500 group-hover:text-yellow-300 font-mono uppercase tracking-wider">Increased Damage</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => onStart(Difficulty.HARD)}
+          className="group relative w-full px-8 py-4 bg-gray-900/50 hover:bg-red-900/30 border border-gray-600 hover:border-red-500 transition-all duration-300 overflow-hidden"
+        >
+           <div className="absolute inset-0 bg-red-500/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+          <div className="relative flex items-center justify-between">
+            <span className="text-xl font-mono font-bold text-white group-hover:text-red-400">NIGHTMARE</span>
+            <span className="text-xs text-gray-500 group-hover:text-red-300 font-mono uppercase tracking-wider">High Damage</span>
+          </div>
+        </button>
+      </div>
+
+      <div className="text-xs text-gray-600 font-mono pt-4">
+        Controls: WASD to Move • Mouse to Look • Click to Shoot • ESC to Pause
+      </div>
+    </div>
+  );
+};
