@@ -1,3 +1,4 @@
+
 import { CellType, type Vector2 } from './types';
 
 export const SCREEN_WIDTH = 640;
@@ -9,10 +10,38 @@ export const MOVE_SPEED = 5.0; // Units per second
 
 // Ammo Constants
 export const CLIP_SIZE = 25;
-export const MAX_RESERVE = 50;
+export const MAX_RESERVE = 150; // Increased for automatic weapon use
 export const START_AMMO = 25;
-export const START_RESERVE = 50;
+export const START_RESERVE = 75;
 export const RELOAD_TIME = 2000; // 2 seconds for full animation
+
+export interface WeaponDef {
+  name: string;
+  isAuto: boolean;
+  fireRate: number; // ms between shots
+  damage: number;
+  headshotMultiplier: number;
+  recoil: number;
+}
+
+export const WEAPONS: WeaponDef[] = [
+  {
+    name: "MK-1 SEMI",
+    isAuto: false,
+    fireRate: 250,
+    damage: 40,
+    headshotMultiplier: 2.5,
+    recoil: 1.0
+  },
+  {
+    name: "M416 AUTO",
+    isAuto: true,
+    fireRate: 100,
+    damage: 22,
+    headshotMultiplier: 2.0,
+    recoil: 0.6
+  }
+];
 
 export const SPAWN_POINTS: Vector2[] = [
   { x: 10.5, y: 10.5 },

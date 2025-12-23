@@ -26,7 +26,8 @@ import {
   MAX_RESERVE,
   START_AMMO,
   START_RESERVE,
-  RELOAD_TIME
+  RELOAD_TIME,
+  WEAPONS
 } from '../constants';
 import { Minimap } from './Minimap';
 
@@ -49,7 +50,8 @@ const createInitialPlayer = (): Player => ({
   ammoReserve: START_RESERVE,
   z: 0,
   vz: 0,
-  pitch: 0
+  pitch: 0,
+  weaponIndex: 0
 });
 
 interface GameProps {
@@ -65,12 +67,15 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   const soundManager = useRef(new SoundManager());
   
   const keys = useRef<Record<string, boolean>>({});
+  const isMouseDown = useRef(false);
   const isZooming = useRef(false);
   const currentFovScale = useRef(FOV);
 
   const walkCycle = useRef(0);
   const lastStepTime = useRef(0);
   const recoilImpulse = useRef(0); 
+  const lastShotTime = useRef(0);
+  const lastDryFireTime = useRef(0);
   
   const [isShooting, setIsShooting] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
@@ -136,8 +141,10 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         safeRequestPointerLock(canvas);
         soundManager.current.init();
       } else {
-        if (e.button === 0) shoot();
-        else if (e.button === 2) {
+        if (e.button === 0) {
+            isMouseDown.current = true;
+            shoot(); 
+        } else if (e.button === 2) {
           isZooming.current = true;
           setIsScoped(true);
         }
@@ -145,6 +152,9 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     };
 
     const handleMouseUp = (e: MouseEvent) => { 
+      if (e.button === 0) {
+        isMouseDown.current = false;
+      }
       if (e.button === 2) {
         isZooming.current = false;
         setIsScoped(false);
@@ -155,7 +165,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       if (stateRef.current.player.health <= 0 || isPaused) return;
       if (document.pointerLockElement === canvas) {
         const { player } = stateRef.current;
-        // Apply sensitivity multiplier
         const baseSensitivityX = isZooming.current ? 0.0005 : 0.0022;
         const sensitivityX = baseSensitivityX * sensitivity;
         const sensitivityY = 1.0; 
@@ -169,14 +178,27 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       }
     };
 
+    const handleWheel = (e: WheelEvent) => {
+        if (isPaused || isReloading || stateRef.current.player.health <= 0) return;
+        const { player } = stateRef.current;
+        if (e.deltaY > 0) {
+            player.weaponIndex = (player.weaponIndex + 1) % WEAPONS.length;
+        } else {
+            player.weaponIndex = (player.weaponIndex - 1 + WEAPONS.length) % WEAPONS.length;
+        }
+        soundManager.current.playAmmoPickup(); // weapon switch sound
+    };
+
     document.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('wheel', handleWheel);
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('mouseup', handleMouseUp);
+      canvas.removeEventListener('wheel', handleWheel);
     };
   }, [isPaused, isReloading, sensitivity, isInfiniteAmmo]); 
 
@@ -206,11 +228,15 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
   const reload = () => {
       const { player } = stateRef.current;
-      // Don't manually reload if ammo is infinite
       if (isInfiniteAmmo || isReloading || player.ammo === CLIP_SIZE || player.ammoReserve === 0) return;
       if (player.health <= 0) return;
       setIsReloading(true);
-      soundManager.current.playReload();
+      
+      // Remove reload sound for M416 (Weapon Index 1) as requested to fix "weird sound"
+      if (player.weaponIndex !== 1) {
+        soundManager.current.playReload();
+      }
+
       setTimeout(() => {
           const needed = CLIP_SIZE - player.ammo;
           const available = Math.min(needed, player.ammoReserve);
@@ -241,30 +267,38 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   };
 
   const shoot = () => {
-    if (stateRef.current.player.health <= 0 || isReloading) return;
-    
-    // Check ammo logic only if infinite ammo is NOT enabled
+    const { player, enemies, map } = stateRef.current;
+    const weapon = WEAPONS[player.weaponIndex];
+    const now = performance.now();
+
+    if (player.health <= 0 || isReloading) return;
+    if (now - lastShotTime.current < weapon.fireRate) return;
+
     if (!isInfiniteAmmo) {
-        if (stateRef.current.player.ammo <= 0) {
-            soundManager.current.playDryFire();
-            reload();
+        if (player.ammo <= 0) {
+            if (player.ammoReserve > 0) {
+                // Auto reload if we have reserves. 
+                // Don't play dry fire here to avoid overlapping "weird" noise.
+                reload();
+            } else {
+                // Only play dry fire click if we are truly empty with no reserves.
+                if (now - lastDryFireTime.current > 400) {
+                    soundManager.current.playDryFire();
+                    lastDryFireTime.current = now;
+                }
+            }
             return;
         }
-        stateRef.current.player.ammo--;
-        
-        // Trigger auto-reload if we just fired the last bullet
-        if (stateRef.current.player.ammo === 0) {
-            reload();
-        }
+        player.ammo--;
     }
 
-    soundManager.current.playShoot();
-    recoilImpulse.current = 1.0;
+    lastShotTime.current = now;
+    soundManager.current.playShoot(weapon.isAuto);
+    recoilImpulse.current = weapon.recoil;
     setIsShooting(true);
     if (shootTimer.current) clearTimeout(shootTimer.current);
-    shootTimer.current = window.setTimeout(() => setIsShooting(false), 50);
+    shootTimer.current = window.setTimeout(() => setIsShooting(false), Math.min(weapon.fireRate, 50));
 
-    const { player, enemies, map } = stateRef.current;
     let closestEnemy: Enemy | null = null;
     let closestDist = Infinity;
     let hitRelativeY = 0;
@@ -293,10 +327,12 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     if (closestEnemy) {
        const target = closestEnemy as Enemy;
        const isHead = hitRelativeY < 0.25; 
-       target.health -= isHead ? 100 : 40; 
+       target.health -= isHead ? (weapon.damage * weapon.headshotMultiplier) : weapon.damage; 
        setHitMarkerOpacity(1.0);
-       setIsHeadshot(isHead);
-       setTimeout(() => setIsHeadshot(false), 200);
+       if (isHead) {
+         setIsHeadshot(true);
+         setTimeout(() => setIsHeadshot(false), 200);
+       }
        if (target.health <= 0) {
            soundManager.current.playEnemyDeath();
            stateRef.current.score += isHead ? 2 : 1; 
@@ -328,7 +364,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     const { player, enemies, map } = stateRef.current;
     const ENEMY_SPEED = 2.5, AGGRO_RANGE = 12.0, ATTACK_RANGE = 1.0, RANGED_RANGE = 9.0;
     
-    // Scale stats based on difficulty
     let damageMelee = 10, damageRanged = 5, shootCooldown = 2500;
     if (difficulty === Difficulty.MEDIUM) {
         damageMelee = 20; damageRanged = 10; shootCooldown = 1800;
@@ -347,7 +382,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         }
 
         if (enemy.state === EnemyState.CHASE) {
-            // Chase logic (Always try to get closer unless already in melee)
             if (dist > ATTACK_RANGE) {
                 const dirX = dx / dist, dirY = dy / dist;
                 const moveStep = ENEMY_SPEED * dt;
@@ -355,16 +389,13 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
                 if (map[Math.floor(enemy.pos.x)]?.[Math.floor(enemy.pos.y + dirY * moveStep)] === 0) enemy.pos.y += dirY * moveStep;
             }
 
-            // Combat logic
             if (dist <= ATTACK_RANGE) {
-                // Melee Attack
                 if (now - enemy.lastAttackTime > 1000) {
                     enemy.lastAttackTime = now;
                     player.health -= damageMelee;
                     soundManager.current.playPlayerDamage();
                 }
             } else if (dist < RANGED_RANGE && canSee) {
-                // Ranged Firing Logic
                 if (now - enemy.lastAttackTime > shootCooldown) {
                     enemy.lastAttackTime = now;
                     player.health -= damageRanged;
@@ -380,6 +411,12 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     if (isPaused) { stateRef.current.lastTime = time; requestRef.current = requestAnimationFrame(tick); return; }
     const dt = Math.min(0.1, (time - stateRef.current.lastTime) / 1000);
     stateRef.current.lastTime = time;
+    
+    // Auto firing logic
+    if (isMouseDown.current && WEAPONS[stateRef.current.player.weaponIndex].isAuto) {
+        shoot();
+    }
+
     if (hitMarkerOpacity > 0) setHitMarkerOpacity(prev => Math.max(0, prev - dt * 4));
     if (stateRef.current.player.health > 0) {
         updatePhysics(dt);
@@ -406,25 +443,21 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     player.plane.y = -player.dir.x * currentFovScale.current;
     
     const now = performance.now();
-    const ITEM_LIFETIME = 5000; // 5 seconds in milliseconds
+    const ITEM_LIFETIME = 5000;
 
     for (let i = items.length - 1; i >= 0; i--) {
         const item = items[i];
-
-        // 1. Automatic Disappearance Check (5-second rule)
         if (now - item.spawnTime > ITEM_LIFETIME) {
             items.splice(i, 1);
             continue;
         }
-
-        // 2. Pickup Check
         if (Math.sqrt((player.pos.x - item.pos.x)**2 + (player.pos.y - item.pos.y)**2) < 0.8) { 
              if (item.textureId === CellType.HEALTH_ORB) { 
                  soundManager.current.playHeal(); 
                  player.health = Math.min(100, player.health + 30); 
              } else { 
                  soundManager.current.playAmmoPickup(); 
-                 player.ammoReserve = Math.min(MAX_RESERVE, player.ammoReserve + CLIP_SIZE); 
+                 player.ammoReserve = Math.min(MAX_RESERVE, player.ammoReserve + CLIP_SIZE * 2); 
              }
              items.splice(i, 1);
         }
@@ -456,18 +489,27 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
   useEffect(() => { requestRef.current = requestAnimationFrame(tick); return () => cancelAnimationFrame(requestRef.current); }, [isPaused]); 
 
+  const currentWeapon = WEAPONS[uiState.player.weaponIndex];
+
   return (
     <div className="relative group select-none overflow-hidden bg-black border-[12px] border-neutral-900 shadow-2xl">
       <canvas ref={canvasRef} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} className="block cursor-none" style={{ width: '800px', height: '600px' }} />
       <Minimap gameState={uiState} />
       
-      {/* TACTICAL SCORE HUD */}
+      {/* TACTICAL HUD */}
       <div className="absolute top-0 right-0 p-10 flex flex-col items-end z-20 pointer-events-none">
           <div className="font-mono text-[10px] text-white/40 tracking-[0.3em] uppercase mb-1">Combat Rating</div>
           <div className="font-mono text-4xl font-black text-white">{uiState.score.toString().padStart(4, '0')}</div>
+          
+          <div className="mt-4 flex flex-col items-end">
+              <div className="font-mono text-[10px] text-green-500/60 tracking-[0.3em] uppercase mb-1">Arsenal</div>
+              <div className="font-mono text-xl font-bold text-green-500 bg-green-500/10 px-3 py-1 border-r-2 border-green-500">
+                {currentWeapon.name}
+              </div>
+          </div>
       </div>
 
-      {/* BOTTOM HUD - CLEAN & VECTOR */}
+      {/* BOTTOM HUD */}
       <div className="absolute bottom-0 left-0 w-full p-10 flex justify-between items-end z-20 pointer-events-none">
          <div className="flex flex-col gap-1 pl-4 border-l-4 border-green-500">
              <div className="flex items-center gap-2 mb-1">
@@ -493,17 +535,14 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       {uiState.player.health < 30 && <div className="absolute inset-0 bg-red-600/5 pointer-events-none animate-pulse z-10" />}
       {isHeadshot && <div className="absolute top-1/3 left-1/2 -translate-x-1/2 text-white font-mono text-2xl font-black uppercase tracking-[0.5em] z-40 bg-red-600 px-6 py-2">Critical</div>}
 
-      {/* CLEAN CROSSHAIR - STRICT PLUS SIGN ONLY */}
+      {/* CROSSHAIR */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 pointer-events-none z-30">
           {!isScoped && (
             <>
-              {/* Main green bars */}
               <div className="absolute top-1/2 left-0 w-full h-[2px] bg-green-400 -translate-y-1/2 shadow-[0_0_2px_black]" />
               <div className="absolute left-1/2 top-0 w-[2px] h-full bg-green-400 -translate-x-1/2 shadow-[0_0_2px_black]" />
             </>
           )}
-          
-          {/* Optional hit flash - changes crosshair color subtly on hit */}
           <div className="absolute inset-0 transition-opacity duration-75" style={{ opacity: hitMarkerOpacity }}>
               <div className="absolute top-1/2 left-0 w-full h-[2px] bg-white -translate-y-1/2 shadow-[0_0_4px_white]" />
               <div className="absolute left-1/2 top-0 w-[2px] h-full bg-white -translate-x-1/2 shadow-[0_0_4px_white]" />
@@ -513,30 +552,39 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       {/* SCOPE OVERLAY */}
       {isScoped && (
         <div className="absolute inset-0 z-40 pointer-events-none">
-          {/* Sniper Vignette */}
           <div className="absolute inset-0 bg-black" style={{ maskImage: 'radial-gradient(circle at 50% 50%, transparent 25%, black 45%)', WebkitMaskImage: 'radial-gradient(circle at 50% 50%, transparent 25%, black 45%)' }} />
-          
-          {/* Reticle Lines */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-[1px] bg-white/30" />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1px] h-full bg-white/30" />
-          
-          {/* Inner Red Dot / Circle */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 border border-white/20 rounded-full" />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 bg-red-500 rounded-full shadow-[0_0_5px_red]" />
-          
-          {/* Range markings / Tech detail */}
           <div className="absolute top-[55%] left-1/2 -translate-x-1/2 text-[8px] font-mono text-white/40 uppercase tracking-widest">Target Lock: Active</div>
         </div>
       )}
 
-      {/* Weapon (Hidden when scoped for typical Sniper effect) */}
+      {/* Weapon Rendering */}
       {!isScoped && (
-        <div ref={weaponRef} className="absolute bottom-0 left-1/2 w-64 h-64 pointer-events-none z-20 origin-bottom flex items-end justify-center transition-transform duration-75">
-          <div className="relative w-20 h-52 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-lg">
-              <div className="absolute top-0 w-full h-12 bg-neutral-800 rounded-t-md" />
-              <div className="absolute top-14 left-1/2 -translate-x-1/2 w-8 h-14 bg-black/40 rounded-full" />
-              {isShooting && <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-500/30 rounded-full blur-2xl animate-ping" />}
-          </div>
+        <div ref={weaponRef} className="absolute bottom-0 left-1/2 w-80 h-80 pointer-events-none z-20 origin-bottom flex items-end justify-center transition-transform duration-75">
+          {uiState.player.weaponIndex === 0 ? (
+            /* MK-1 VISUALS (Standard Rifle) */
+            <div className="relative w-20 h-52 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-lg">
+                <div className="absolute top-0 w-full h-12 bg-neutral-800 rounded-t-md" />
+                <div className="absolute top-14 left-1/2 -translate-x-1/2 w-8 h-14 bg-black/40 rounded-full" />
+                {isShooting && <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-500/30 rounded-full blur-2xl animate-ping" />}
+            </div>
+          ) : (
+            /* M416 VISUALS (Sleek Carbine) */
+            <div className="relative w-28 h-60 flex flex-col items-center">
+                 {/* Barrel */}
+                 <div className="w-6 h-32 bg-neutral-800 border-x-2 border-neutral-700 -mb-4 z-0" />
+                 {/* Body */}
+                 <div className="relative w-24 h-44 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-xl z-10 overflow-hidden">
+                    <div className="absolute top-0 w-full h-16 bg-neutral-800 border-b-2 border-neutral-700" />
+                    <div className="absolute top-20 left-1/2 -translate-x-1/2 w-12 h-20 bg-black/60 rounded-md" />
+                    <div className="absolute top-4 right-2 w-4 h-8 bg-green-500/20 rounded" />
+                 </div>
+                 {isShooting && <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-orange-500/30 rounded-full blur-3xl animate-pulse" />}
+            </div>
+          )}
         </div>
       )}
 
@@ -546,7 +594,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
               <h2 className="text-white font-mono text-5xl font-black mb-10 tracking-[0.2em]">TERMINAL PAUSE</h2>
               
               <div className="flex flex-col gap-6 w-72 mb-10">
-                  {/* Sensitivity Control */}
                   <div className="flex flex-col gap-2">
                       <div className="flex justify-between font-mono text-xs text-white/60 uppercase">
                           <span>Aim Sensitivity</span>
@@ -562,8 +609,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
                           className="w-full accent-green-500 bg-white/10"
                       />
                   </div>
-
-                  {/* Ammo Mode Toggle */}
                   <button 
                       onClick={() => setIsInfiniteAmmo(!isInfiniteAmmo)}
                       className={`w-full py-3 font-mono font-bold uppercase tracking-wider border transition-colors ${isInfiniteAmmo ? 'bg-green-600 border-green-400 text-white' : 'border-white/20 text-white/60 hover:border-white/40'}`}

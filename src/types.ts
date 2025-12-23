@@ -14,6 +14,7 @@ export interface Player {
   z: number;           // Vertical position (height)
   vz: number;          // Vertical velocity
   pitch: number;       // Vertical look offset (in pixels)
+  weaponIndex: number; // Current weapon slot
 }
 
 // EnemyState (Value)

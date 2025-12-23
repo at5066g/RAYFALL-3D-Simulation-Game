@@ -1,3 +1,4 @@
+
 export class SoundManager {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -29,14 +30,15 @@ export class SoundManager {
     return this.ctx;
   }
 
-  public playShoot() {
+  public playShoot(isAuto: boolean = false) {
     const ctx = this.getContext();
     if (!ctx || !this.masterGain) return;
 
     const t = ctx.currentTime;
+    const duration = isAuto ? 0.08 : 0.15;
     
     // 1. Noise Burst (The "Bang")
-    const bufferSize = ctx.sampleRate * 0.15;
+    const bufferSize = ctx.sampleRate * duration;
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -48,12 +50,12 @@ export class SoundManager {
 
     const noiseFilter = ctx.createBiquadFilter();
     noiseFilter.type = 'lowpass';
-    noiseFilter.frequency.setValueAtTime(1000, t);
-    noiseFilter.frequency.exponentialRampToValueAtTime(100, t + 0.1);
+    noiseFilter.frequency.setValueAtTime(isAuto ? 1500 : 1000, t);
+    noiseFilter.frequency.exponentialRampToValueAtTime(100, t + duration);
 
     const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.8, t);
-    noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+    noiseGain.gain.setValueAtTime(isAuto ? 0.6 : 0.8, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, t + duration);
 
     noise.connect(noiseFilter);
     noiseFilter.connect(noiseGain);
@@ -62,18 +64,18 @@ export class SoundManager {
 
     // 2. Punch (Low sine wave drop)
     const osc = ctx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(150, t);
-    osc.frequency.exponentialRampToValueAtTime(40, t + 0.1);
+    osc.type = isAuto ? 'sawtooth' : 'square';
+    osc.frequency.setValueAtTime(isAuto ? 200 : 150, t);
+    osc.frequency.exponentialRampToValueAtTime(40, t + duration * 0.8);
 
     const oscGain = ctx.createGain();
-    oscGain.gain.setValueAtTime(0.5, t);
-    oscGain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+    oscGain.gain.setValueAtTime(isAuto ? 0.3 : 0.5, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, t + duration * 0.8);
 
     osc.connect(oscGain);
     oscGain.connect(this.masterGain);
     osc.start(t);
-    osc.stop(t + 0.1);
+    osc.stop(t + duration * 0.8);
   }
 
   public playDryFire() {
