@@ -82,6 +82,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   // Settings State
   const [sensitivity, setSensitivity] = useState(1.0);
   const [isInfiniteAmmo, setIsInfiniteAmmo] = useState(false);
+  const [isScoped, setIsScoped] = useState(false);
 
   const shootTimer = useRef<number | null>(null);
   const lastSpawnTime = useRef(0);
@@ -136,11 +137,19 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         soundManager.current.init();
       } else {
         if (e.button === 0) shoot();
-        else if (e.button === 2) isZooming.current = true;
+        else if (e.button === 2) {
+          isZooming.current = true;
+          setIsScoped(true);
+        }
       }
     };
 
-    const handleMouseUp = (e: MouseEvent) => { if (e.button === 2) isZooming.current = false; };
+    const handleMouseUp = (e: MouseEvent) => { 
+      if (e.button === 2) {
+        isZooming.current = false;
+        setIsScoped(false);
+      }
+    };
 
     const handleMouseMove = (e: MouseEvent) => {
       if (stateRef.current.player.health <= 0 || isPaused) return;
@@ -391,7 +400,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         player.z += player.vz * dt;
         if (player.z < 0) { player.z = 0; player.vz = 0; }
     }
-    const targetFov = isZooming.current ? 0.30 : FOV; 
+    const targetFov = isZooming.current ? 0.22 : FOV; 
     currentFovScale.current += (targetFov - currentFovScale.current) * 8.0 * dt;
     player.plane.x = player.dir.y * currentFovScale.current;
     player.plane.y = -player.dir.x * currentFovScale.current;
@@ -486,9 +495,13 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
       {/* CLEAN CROSSHAIR - STRICT PLUS SIGN ONLY */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 pointer-events-none z-30">
-          {/* Main green bars */}
-          <div className="absolute top-1/2 left-0 w-full h-[2px] bg-green-400 -translate-y-1/2 shadow-[0_0_2px_black]" />
-          <div className="absolute left-1/2 top-0 w-[2px] h-full bg-green-400 -translate-x-1/2 shadow-[0_0_2px_black]" />
+          {!isScoped && (
+            <>
+              {/* Main green bars */}
+              <div className="absolute top-1/2 left-0 w-full h-[2px] bg-green-400 -translate-y-1/2 shadow-[0_0_2px_black]" />
+              <div className="absolute left-1/2 top-0 w-[2px] h-full bg-green-400 -translate-x-1/2 shadow-[0_0_2px_black]" />
+            </>
+          )}
           
           {/* Optional hit flash - changes crosshair color subtly on hit */}
           <div className="absolute inset-0 transition-opacity duration-75" style={{ opacity: hitMarkerOpacity }}>
@@ -497,14 +510,35 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
           </div>
       </div>
 
-      {/* Weapon */}
-      <div ref={weaponRef} className="absolute bottom-0 left-1/2 w-64 h-64 pointer-events-none z-20 origin-bottom flex items-end justify-center transition-transform duration-75">
-         <div className="relative w-20 h-52 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-lg">
-            <div className="absolute top-0 w-full h-12 bg-neutral-800 rounded-t-md" />
-            <div className="absolute top-14 left-1/2 -translate-x-1/2 w-8 h-14 bg-black/40 rounded-full" />
-            {isShooting && <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-500/30 rounded-full blur-2xl animate-ping" />}
-         </div>
-      </div>
+      {/* SCOPE OVERLAY */}
+      {isScoped && (
+        <div className="absolute inset-0 z-40 pointer-events-none">
+          {/* Sniper Vignette */}
+          <div className="absolute inset-0 bg-black" style={{ maskImage: 'radial-gradient(circle at 50% 50%, transparent 25%, black 45%)', WebkitMaskImage: 'radial-gradient(circle at 50% 50%, transparent 25%, black 45%)' }} />
+          
+          {/* Reticle Lines */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-[1px] bg-white/30" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1px] h-full bg-white/30" />
+          
+          {/* Inner Red Dot / Circle */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 border border-white/20 rounded-full" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 bg-red-500 rounded-full shadow-[0_0_5px_red]" />
+          
+          {/* Range markings / Tech detail */}
+          <div className="absolute top-[55%] left-1/2 -translate-x-1/2 text-[8px] font-mono text-white/40 uppercase tracking-widest">Target Lock: Active</div>
+        </div>
+      )}
+
+      {/* Weapon (Hidden when scoped for typical Sniper effect) */}
+      {!isScoped && (
+        <div ref={weaponRef} className="absolute bottom-0 left-1/2 w-64 h-64 pointer-events-none z-20 origin-bottom flex items-end justify-center transition-transform duration-75">
+          <div className="relative w-20 h-52 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-lg">
+              <div className="absolute top-0 w-full h-12 bg-neutral-800 rounded-t-md" />
+              <div className="absolute top-14 left-1/2 -translate-x-1/2 w-8 h-14 bg-black/40 rounded-full" />
+              {isShooting && <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-500/30 rounded-full blur-2xl animate-ping" />}
+          </div>
+        </div>
+      )}
 
       {/* PAUSE MENU */}
       {isPaused && (
