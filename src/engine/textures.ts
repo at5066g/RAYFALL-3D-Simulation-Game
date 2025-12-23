@@ -1,15 +1,18 @@
+
 import { CellType, type Texture } from '../types';
 
 const TEX_WIDTH = 64;
 const TEX_HEIGHT = 64;
 
-// Helper to create a canvas texture
 const createTexture = (drawFn: (ctx: CanvasRenderingContext2D) => void): Texture => {
   const canvas = document.createElement('canvas');
   canvas.width = TEX_WIDTH;
   canvas.height = TEX_HEIGHT;
   const ctx = canvas.getContext('2d');
   if (ctx) {
+    ctx.imageSmoothingEnabled = false;
+    // Standard clear to ensure full transparency
+    ctx.clearRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
     drawFn(ctx);
   }
   return { image: canvas, width: TEX_WIDTH, height: TEX_HEIGHT };
@@ -18,162 +21,103 @@ const createTexture = (drawFn: (ctx: CanvasRenderingContext2D) => void): Texture
 export const generateTextures = (): Record<number, Texture> => {
   const textures: Record<number, Texture> = {};
 
-  // 1. Red Brick
+  // --- WALLS ---
   textures[CellType.WALL_1] = createTexture((ctx) => {
-    ctx.fillStyle = '#8B0000'; // Dark Red
+    ctx.fillStyle = '#6b1111';
     ctx.fillRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
-    ctx.fillStyle = '#A52A2A'; // Brown/Red Light
-    // Draw brick pattern
     for (let y = 0; y < TEX_HEIGHT; y += 16) {
       for (let x = 0; x < TEX_WIDTH; x += 32) {
         const offset = (y / 16) % 2 === 0 ? 0 : 16;
-        ctx.fillRect(x + offset + 1, y + 1, 30, 14);
+        ctx.fillStyle = '#8b2222';
+        ctx.fillRect(x + offset + 2, y + 2, 28, 12);
+        ctx.fillStyle = '#4a0808';
+        ctx.fillRect(x + offset + 2, y + 14, 30, 2);
       }
     }
   });
 
-  // 2. Green Slime / Mossy Stone
   textures[CellType.WALL_2] = createTexture((ctx) => {
-    ctx.fillStyle = '#2F4F4F'; // Dark Slate Gray
+    ctx.fillStyle = '#3d3d3d';
     ctx.fillRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
-    // Add noise
-    for (let i = 0; i < 200; i++) {
-      ctx.fillStyle = Math.random() > 0.5 ? '#006400' : '#556B2F';
-      const size = Math.random() * 8 + 2;
-      ctx.fillRect(Math.random() * TEX_WIDTH, Math.random() * TEX_HEIGHT, size, size);
+    for (let i = 0; i < 400; i++) {
+      ctx.fillStyle = Math.random() > 0.8 ? '#2d5a27' : '#4d4d4d';
+      ctx.fillRect(Math.random() * 64, Math.random() * 64, 2, 2);
     }
   });
 
-  // 3. Blue Tech
   textures[CellType.WALL_3] = createTexture((ctx) => {
-    ctx.fillStyle = '#00008B'; // Dark Blue
+    ctx.fillStyle = '#1e293b';
     ctx.fillRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
-    ctx.strokeStyle = '#00FFFF'; // Cyan
+    ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 2;
-    ctx.strokeRect(4, 4, TEX_WIDTH - 8, TEX_HEIGHT - 8);
-    ctx.beginPath();
-    ctx.moveTo(TEX_WIDTH / 2, 4);
-    ctx.lineTo(TEX_WIDTH / 2, TEX_HEIGHT - 4);
-    ctx.moveTo(4, TEX_HEIGHT / 2);
-    ctx.lineTo(TEX_WIDTH - 4, TEX_HEIGHT / 2);
-    ctx.stroke();
+    ctx.strokeRect(8, 8, 48, 48);
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(16, 16, 32, 32);
   });
 
-  // 4. Wood
   textures[CellType.WALL_4] = createTexture((ctx) => {
-    ctx.fillStyle = '#8B4513'; // SaddleBrown
+    ctx.fillStyle = '#452610';
     ctx.fillRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
-    ctx.fillStyle = '#A0522D'; // Sienna
-    // Vertical planks
-    for (let x = 0; x < TEX_WIDTH; x += 16) {
-        ctx.fillRect(x + 2, 0, 12, TEX_HEIGHT);
-    }
-    // Nails
-    ctx.fillStyle = '#222';
-    for (let x = 8; x < TEX_WIDTH; x += 16) {
-        ctx.fillRect(x - 1, 4, 2, 2);
-        ctx.fillRect(x - 1, TEX_HEIGHT - 6, 2, 2);
+    ctx.fillStyle = '#5c3317';
+    for (let x = 0; x < 64; x += 8) {
+      ctx.fillRect(x + 1, 0, 6, 64);
     }
   });
 
-  // 50. Health Orb
+  // --- SPRITES (Clean Pixel Art) ---
   textures[CellType.HEALTH_ORB] = createTexture((ctx) => {
-    // Transparent BG
-    ctx.clearRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
-    
-    // Glowing Green Orb
-    const grad = ctx.createRadialGradient(32, 32, 5, 32, 32, 28);
-    grad.addColorStop(0, '#aaffaa');
-    grad.addColorStop(0.5, '#00ff00');
-    grad.addColorStop(1, 'rgba(0, 255, 0, 0)');
-    
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(32, 32, 28, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Cross in middle
-    ctx.fillStyle = '#fff';
+    // White Sphere
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(32, 32, 22, 0, Math.PI * 2); ctx.fill();
+    // Green Cross
+    ctx.fillStyle = '#22c55e';
     ctx.fillRect(28, 16, 8, 32);
     ctx.fillRect(16, 28, 32, 8);
-  });
-
-  // 51. Ammo (Bullet Icon)
-  textures[CellType.AMMO_BOX] = createTexture((ctx) => {
-    // Transparent BG
-    ctx.clearRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
-
-    const cx = 32;
-    const cy = 32;
-    const scale = 1.5;
-
-    // Glow
-    const grad = ctx.createRadialGradient(cx, cy, 10, cx, cy, 30);
-    grad.addColorStop(0, 'rgba(255, 215, 0, 0.8)');
-    grad.addColorStop(1, 'rgba(255, 215, 0, 0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 30, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(scale, scale);
-    ctx.translate(-cx, -cy);
-
-    // Bullet Casing (Brass)
-    ctx.fillStyle = '#B8860B'; // Dark Goldenrod
-    ctx.strokeStyle = '#554400';
+    // Dark Border for contrast
+    ctx.strokeStyle = '#065f46';
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.rect(26, 28, 12, 24);
-    ctx.fill();
-    ctx.stroke();
-
-    // Bullet Tip (Silver/Lead)
-    ctx.fillStyle = '#777777';
-    ctx.beginPath();
-    ctx.moveTo(26, 28);
-    ctx.quadraticCurveTo(32, 10, 38, 28);
-    ctx.fill();
-    ctx.stroke();
-
-    // Rim
-    ctx.fillStyle = '#8B4513';
-    ctx.beginPath();
-    ctx.rect(25, 52, 14, 4);
-    ctx.fill();
-    ctx.stroke();
-
-    // Shine
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillRect(28, 30, 2, 18);
-    
-    ctx.restore();
+    ctx.beginPath(); ctx.arc(32, 32, 22, 0, Math.PI * 2); ctx.stroke();
   });
 
-  // 99. Enemy Guard
+  textures[CellType.AMMO_BOX] = createTexture((ctx) => {
+    // Dark Body
+    ctx.fillStyle = '#1a2e05'; 
+    ctx.fillRect(10, 24, 44, 32);
+    // Yellow Detail
+    ctx.fillStyle = '#fde047';
+    ctx.fillRect(12, 36, 40, 10);
+    // Solid Black Label
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('AMMO', 32, 44);
+  });
+
   textures[CellType.ENEMY_GUARD] = createTexture((ctx) => {
-    // Transparent Background
-    ctx.clearRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
-    
-    // Body (Blue Uniform)
+    // Body (Deep Navy)
     ctx.fillStyle = '#1e3a8a';
-    ctx.fillRect(20, 20, 24, 44);
-    
-    // Head (Flesh tone)
-    ctx.fillStyle = '#fca5a5';
-    ctx.fillRect(24, 10, 16, 14);
+    ctx.fillRect(18, 18, 28, 32);
+    // Armor
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(20, 20, 24, 18);
+    // Helmet
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(24, 6, 16, 12);
+    // Visor (Vibrant Red)
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(24, 10, 16, 4);
+    // Legs
+    ctx.fillStyle = '#1e3a8a';
+    ctx.fillRect(20, 50, 8, 10);
+    ctx.fillRect(36, 50, 8, 10);
+    // Weapon (Matte Black)
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(42, 28, 14, 6);
+  });
 
-    // Eyes
-    ctx.fillStyle = '#000';
-    ctx.fillRect(26, 14, 4, 2);
-    ctx.fillRect(34, 14, 4, 2);
-
-    // Gun (Gray)
-    ctx.fillStyle = '#4b5563';
-    ctx.fillRect(36, 35, 20, 8); // Barrel
-    ctx.fillRect(38, 38, 8, 12); // Stock
+  textures[CellType.PARTICLE_BLOOD] = createTexture((ctx) => {
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(20, 20, 24, 24);
   });
 
   return textures;

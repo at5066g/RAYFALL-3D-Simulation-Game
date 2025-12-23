@@ -1,3 +1,4 @@
+
 export interface Vector2 {
   x: number;
   y: number;
@@ -10,13 +11,18 @@ export interface Player {
   health: number;
   ammo: number;        // Current rounds in mag
   ammoReserve: number; // Rounds in bag
+  z: number;           // Vertical position (height)
+  vz: number;          // Vertical velocity
+  pitch: number;       // Vertical look offset (in pixels)
 }
 
 // EnemyState (Value)
 export const EnemyState = {
   IDLE: 0,
   CHASE: 1,
-  ATTACK: 2
+  ATTACK: 2,
+  DYING: 3,
+  DEAD: 4
 } as const;
 
 // EnemyStateValue (Type)
@@ -30,6 +36,7 @@ export interface Enemy {
   health: number;
   textureId: number;
   lastAttackTime: number; 
+  animationTimer: number; // For frame switching
 }
 
 export interface Item {
@@ -37,6 +44,14 @@ export interface Item {
   pos: Vector2;
   textureId: number;
   spawnTime: number;
+}
+
+export interface Particle {
+  id: number;
+  pos: Vector2;
+  textureId: number;
+  life: number;     // 1.0 to 0.0
+  velocity: Vector2;
 }
 
 // Difficulty (Value)
@@ -53,6 +68,7 @@ export interface GameState {
   player: Player;
   enemies: Enemy[];
   items: Item[];
+  particles: Particle[];
   map: number[][];
   lastTime: number;
   score: number;
@@ -74,6 +90,10 @@ export const CellType = {
   HEALTH_ORB: 50,
   AMMO_BOX: 51,
   ENEMY_GUARD: 99,
+  ENEMY_GUARD_WALK: 98,
+  ENEMY_GUARD_DEAD: 97,
+  PARTICLE_BLOOD: 200,
+  PARTICLE_IMPACT: 201
 } as const;
 
 // CellTypeValue (Type)

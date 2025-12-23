@@ -1,3 +1,4 @@
+
 import type { GameState, Player, Texture, Enemy, Item, Vector2 } from '../types';
 
 interface RenderableSprite {
@@ -6,7 +7,6 @@ interface RenderableSprite {
 }
 
 export class Raycaster {
-  // Buffers
   private zBuffer: number[];
   private width: number;
   private height: number;
@@ -17,33 +17,28 @@ export class Raycaster {
     this.zBuffer = new Array(width).fill(0);
   }
 
-  /**
-   * Main render loop.
-   * Renders the 3D scene onto the provided canvas context.
-   */
   public render(
     ctx: CanvasRenderingContext2D,
     gameState: GameState,
     textures: Record<number, Texture>
   ) {
-    const { player, map, enemies, items } = gameState;
+    const { player, map, enemies, items, particles } = gameState;
     const w = this.width;
     const h = this.height;
+    const horizonOffset = player.pitch;
 
-    // 1. Draw Ceiling and Floor (Simple solid colors for performance)
-    ctx.fillStyle = '#383838';
-    ctx.fillRect(0, 0, w, h / 2);
-    ctx.fillStyle = '#707070';
-    ctx.fillRect(0, h / 2, w, h / 2);
+    // 1. Clean Retro Background (Flat colors, no overlays)
+    ctx.fillStyle = '#1a1a1a'; // Ceiling
+    ctx.fillRect(0, 0, w, h / 2 + horizonOffset);
+    
+    ctx.fillStyle = '#333333'; // Floor
+    ctx.fillRect(0, h / 2 + horizonOffset, w, h);
 
     // 2. Wall Casting
     this.castWalls(ctx, player, map, textures, w, h);
 
-    // 3. Sprite Casting (Enemies + Items)
-    // Filter dead enemies, but keep all items
-    const visibleEnemies = enemies.filter(e => e.health > 0);
-    const allSprites: RenderableSprite[] = [...visibleEnemies, ...items];
-    
+    // 3. Sprite Casting (Enemies + Items + Particles)
+    const allSprites: RenderableSprite[] = [...enemies, ...items, ...particles];
     this.castSprites(ctx, player, allSprites, textures, w, h);
   }
 
@@ -103,57 +98,52 @@ export class Raycaster {
           mapY += stepY;
           side = 1;
         }
-
         if (map[mapX] && map[mapX][mapY] > 0) {
           hit = 1;
           wallType = map[mapX][mapY];
         }
       }
 
-      if (side === 0) {
-        perpWallDist = (sideDistX - deltaDistX);
-      } else {
-        perpWallDist = (sideDistY - deltaDistY);
-      }
+      if (side === 0) perpWallDist = (sideDistX - deltaDistX);
+      else perpWallDist = (sideDistY - deltaDistY);
 
-      // Store in Z-Buffer for sprite occlusion
       this.zBuffer[x] = perpWallDist;
 
       const lineHeight = Math.floor(h / perpWallDist);
-      let drawStart = -lineHeight / 2 + h / 2;
-      if (drawStart < 0) drawStart = 0;
-      let drawEnd = lineHeight / 2 + h / 2;
-      if (drawEnd >= h) drawEnd = h - 1;
-
-      const texNum = wallType;
-      const texture = textures[texNum] || textures[1];
+      const playerHeightOffset = (player.z * h) / perpWallDist;
       
-      let wallX; 
-      if (side === 0) {
-          wallX = player.pos.y + perpWallDist * rayDirY;
-      } else {
-          wallX = player.pos.x + perpWallDist * rayDirX;
-      }
+      let drawStart = -lineHeight / 2 + h / 2 + player.pitch + playerHeightOffset;
+      let drawEnd = lineHeight / 2 + h / 2 + player.pitch + playerHeightOffset;
+
+      const texture = textures[wallType] || textures[1];
+      let wallX = side === 0 ? player.pos.y + perpWallDist * rayDirY : player.pos.x + perpWallDist * rayDirX;
       wallX -= Math.floor(wallX);
 
       let texX = Math.floor(wallX * texture.width);
       if (side === 0 && rayDirX > 0) texX = texture.width - texX - 1;
       if (side === 1 && rayDirY < 0) texX = texture.width - texX - 1;
 
-      try {
+      const clippedStart = Math.max(0, drawStart);
+      const clippedEnd = Math.min(h - 1, drawEnd);
+
+      if (clippedEnd > clippedStart) {
         ctx.drawImage(
             texture.image, 
             texX, 0, 1, texture.height, 
-            x, drawStart, 1, drawEnd - drawStart 
+            x, clippedStart, 1, clippedEnd - clippedStart 
         );
 
         if (side === 1) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-            ctx.fillRect(x, drawStart, 1, drawEnd - drawStart);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(x, clippedStart, 1, clippedEnd - clippedStart);
         }
-      } catch (e) {
-        ctx.fillStyle = '#880000';
-        ctx.fillRect(x, drawStart, 1, drawEnd - drawStart);
+
+        const fogDistance = 14.0;
+        let fogAmount = Math.min(1, perpWallDist / fogDistance);
+        if (fogAmount > 0) {
+            ctx.fillStyle = `rgba(0, 0, 0, ${fogAmount * 0.85})`;
+            ctx.fillRect(x, clippedStart, 1, clippedEnd - clippedStart);
+        }
       }
     }
   }
@@ -166,65 +156,57 @@ export class Raycaster {
     w: number,
     h: number
   ) {
-    // 1. Sort sprites from far to close
     const spriteOrder = sprites
       .map((sprite) => {
-        const dist = 
-          (player.pos.x - sprite.pos.x) * (player.pos.x - sprite.pos.x) + 
-          (player.pos.y - sprite.pos.y) * (player.pos.y - sprite.pos.y);
+        const dist = (player.pos.x - sprite.pos.x) ** 2 + (player.pos.y - sprite.pos.y) ** 2;
         return { sprite, dist };
       })
-      .sort((a, b) => b.dist - a.dist); // Descending order
+      .sort((a, b) => b.dist - a.dist); 
 
-    // 2. Project and draw sprites
     for (const item of spriteOrder) {
-        const sprite = item.sprite;
-        
-        // Translate sprite position to relative to camera
+        const { sprite } = item;
         const spriteX = sprite.pos.x - player.pos.x;
         const spriteY = sprite.pos.y - player.pos.y;
-
-        // Transform sprite with the inverse camera matrix
         const invDet = 1.0 / (player.plane.x * player.dir.y - player.dir.x * player.plane.y);
         
         const transformX = invDet * (player.dir.y * spriteX - player.dir.x * spriteY);
-        const transformY = invDet * (-player.plane.y * spriteX + player.plane.x * spriteY); // this is depth (Z)
+        const transformY = invDet * (-player.plane.y * spriteX + player.plane.x * spriteY); 
 
-        // If sprite is behind the player, skip
         if (transformY <= 0) continue;
 
         const spriteScreenX = Math.floor((w / 2) * (1 + transformX / transformY));
-
-        // Calculate height of the sprite on screen
         const spriteHeight = Math.abs(Math.floor(h / transformY)); 
-        
-        // Calculate lowest and highest pixel to fill in current stripe
-        let drawStartY = -spriteHeight / 2 + h / 2;
-        if (drawStartY < 0) drawStartY = 0;
-        let drawEndY = spriteHeight / 2 + h / 2;
-        if (drawEndY >= h) drawEndY = h - 1;
+        const vOffset = player.pitch + (player.z * h) / transformY;
 
-        // Calculate width of the sprite
-        const spriteWidth = Math.abs(Math.floor(h / transformY)); // Assume square aspect ratio for sprite
-        let drawStartX = -spriteWidth / 2 + spriteScreenX;
-        let drawEndX = spriteWidth / 2 + spriteScreenX;
-        
-        // Clip horizontally
-        if (drawStartX < 0) drawStartX = 0;
-        if (drawEndX >= w) drawEndX = w - 1;
+        let drawStartY = -spriteHeight / 2 + h / 2 + vOffset;
+        let drawEndY = spriteHeight / 2 + h / 2 + vOffset;
 
+        const spriteWidth = Math.abs(Math.floor(h / transformY)); 
+        let drawStartX = Math.max(0, -spriteWidth / 2 + spriteScreenX);
+        let drawEndX = Math.min(w - 1, spriteWidth / 2 + spriteScreenX);
+        
         const texture = textures[sprite.textureId];
         if (!texture) continue;
 
+        // SPRITE TRANSPARENCY FIX:
+        // We draw the sprite slice by slice. We NO LONGER call fillRect here
+        // because it draws a black box regardless of the sprite's alpha channel.
         for (let stripe = Math.floor(drawStartX); stripe < Math.floor(drawEndX); stripe++) {
             const texX = Math.floor((stripe - (-spriteWidth / 2 + spriteScreenX)) * texture.width / spriteWidth);
-            
             if (transformY > 0 && stripe > 0 && stripe < w && transformY < this.zBuffer[stripe]) {
-                ctx.drawImage(
-                    texture.image,
-                    texX, 0, 1, texture.height,
-                    stripe, drawStartY, 1, drawEndY - drawStartY
-                );
+                const clippedYStart = Math.max(0, drawStartY);
+                const clippedYEnd = Math.min(h - 1, drawEndY);
+
+                if (clippedYEnd > clippedYStart) {
+                    ctx.drawImage(
+                        texture.image,
+                        texX, 0, 1, texture.height,
+                        stripe, clippedYStart, 1, clippedYEnd - clippedYStart
+                    );
+                    
+                    // Note: If you want fog on sprites, it must be done via globalCompositeOperation
+                    // or by modifying the texture source. Standard fillRect creates the 'black box'.
+                }
             }
         }
     }
