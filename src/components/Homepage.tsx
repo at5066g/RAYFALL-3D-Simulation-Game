@@ -10,7 +10,7 @@ export const Homepage: React.FC<HomepageProps> = ({ onStart }) => {
     <div className="relative z-10 flex flex-col items-center justify-center w-full max-w-2xl p-12 space-y-8 bg-black/80 border border-gray-700 rounded-lg shadow-2xl backdrop-blur-sm animate-in fade-in zoom-in duration-500">
       <div className="text-center space-y-2">
         <h1 className="text-6xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 font-mono">
-          RAYCASTER FPS
+          RAYFALL
         </h1>
         <p className="text-gray-400 tracking-widest uppercase text-sm">Tactical shooter simulation</p>
       </div>

@@ -78,6 +78,10 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   const [isPaused, setIsPaused] = useState(false);
   const [hitMarkerOpacity, setHitMarkerOpacity] = useState(0); 
   const [isHeadshot, setIsHeadshot] = useState(false);
+  
+  // Settings State
+  const [sensitivity, setSensitivity] = useState(1.0);
+  const [isInfiniteAmmo, setIsInfiniteAmmo] = useState(false);
 
   const shootTimer = useRef<number | null>(null);
   const lastSpawnTime = useRef(0);
@@ -142,7 +146,9 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       if (stateRef.current.player.health <= 0 || isPaused) return;
       if (document.pointerLockElement === canvas) {
         const { player } = stateRef.current;
-        const sensitivityX = isZooming.current ? 0.0005 : 0.0022;
+        // Apply sensitivity multiplier
+        const baseSensitivityX = isZooming.current ? 0.0005 : 0.0022;
+        const sensitivityX = baseSensitivityX * sensitivity;
         const sensitivityY = 1.0; 
         const rotX = -e.movementX * sensitivityX;
         const oldDirX = player.dir.x;
@@ -163,7 +169,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       canvas.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPaused, isReloading]); 
+  }, [isPaused, isReloading, sensitivity, isInfiniteAmmo]); 
 
   const jump = () => {
       const { player } = stateRef.current;
@@ -191,7 +197,8 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
   const reload = () => {
       const { player } = stateRef.current;
-      if (isReloading || player.ammo === CLIP_SIZE || player.ammoReserve === 0) return;
+      // Don't manually reload if ammo is infinite
+      if (isInfiniteAmmo || isReloading || player.ammo === CLIP_SIZE || player.ammoReserve === 0) return;
       if (player.health <= 0) return;
       setIsReloading(true);
       soundManager.current.playReload();
@@ -226,17 +233,20 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
   const shoot = () => {
     if (stateRef.current.player.health <= 0 || isReloading) return;
-    if (stateRef.current.player.ammo <= 0) {
-        soundManager.current.playDryFire();
-        // Trigger auto-reload if trying to shoot while empty
-        reload();
-        return;
-    }
-    stateRef.current.player.ammo--;
     
-    // Trigger auto-reload if we just fired the last bullet
-    if (stateRef.current.player.ammo === 0) {
-        reload();
+    // Check ammo logic only if infinite ammo is NOT enabled
+    if (!isInfiniteAmmo) {
+        if (stateRef.current.player.ammo <= 0) {
+            soundManager.current.playDryFire();
+            reload();
+            return;
+        }
+        stateRef.current.player.ammo--;
+        
+        // Trigger auto-reload if we just fired the last bullet
+        if (stateRef.current.player.ammo === 0) {
+            reload();
+        }
     }
 
     soundManager.current.playShoot();
@@ -465,7 +475,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M14.5 2h-5L7 7v15h10V7l-2.5-5zm-3.5 13h2v2h-2v-2zm0-4h2v2h-2v-2z"/></svg>
              </div>
              <div className="text-white font-mono text-5xl font-black leading-none">
-                {uiState.player.ammo}<span className="text-xl text-white/20 ml-2">[{uiState.player.ammoReserve}]</span>
+                {isInfiniteAmmo ? '∞' : uiState.player.ammo}<span className="text-xl text-white/20 ml-2">[{isInfiniteAmmo ? '∞' : uiState.player.ammoReserve}]</span>
              </div>
          </div>
       </div>
@@ -499,8 +509,36 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       {/* PAUSE MENU */}
       {isPaused && (
           <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center z-50">
-              <h2 className="text-white font-mono text-5xl font-black mb-12 tracking-[0.2em]">TERMINAL PAUSE</h2>
-              <div className="flex flex-col gap-4 w-60">
+              <h2 className="text-white font-mono text-5xl font-black mb-10 tracking-[0.2em]">TERMINAL PAUSE</h2>
+              
+              <div className="flex flex-col gap-6 w-72 mb-10">
+                  {/* Sensitivity Control */}
+                  <div className="flex flex-col gap-2">
+                      <div className="flex justify-between font-mono text-xs text-white/60 uppercase">
+                          <span>Aim Sensitivity</span>
+                          <span>{sensitivity.toFixed(1)}x</span>
+                      </div>
+                      <input 
+                          type="range" 
+                          min="0.1" 
+                          max="3.0" 
+                          step="0.1" 
+                          value={sensitivity} 
+                          onChange={(e) => setSensitivity(parseFloat(e.target.value))}
+                          className="w-full accent-green-500 bg-white/10"
+                      />
+                  </div>
+
+                  {/* Ammo Mode Toggle */}
+                  <button 
+                      onClick={() => setIsInfiniteAmmo(!isInfiniteAmmo)}
+                      className={`w-full py-3 font-mono font-bold uppercase tracking-wider border transition-colors ${isInfiniteAmmo ? 'bg-green-600 border-green-400 text-white' : 'border-white/20 text-white/60 hover:border-white/40'}`}
+                  >
+                      Ammo: {isInfiniteAmmo ? 'Infinite' : 'Tactical'}
+                  </button>
+              </div>
+
+              <div className="flex flex-col gap-4 w-72">
                   <button onClick={() => setIsPaused(false)} className="w-full py-4 bg-white text-black font-mono font-black uppercase tracking-widest hover:bg-neutral-200 transition-colors">Resume</button>
                   <button onClick={onExit} className="w-full py-4 border-2 border-white text-white font-mono font-black uppercase tracking-widest hover:bg-white/10 transition-all">Abort Mission</button>
               </div>
