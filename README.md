@@ -2,7 +2,7 @@
 
 **RAYFALL** is a high-performance, retro-style 3D First-Person Shooter (FPS) engine built from scratch using **React**, **TypeScript**, and **HTML5 Canvas**. It utilizes the classic **Digital Differential Analysis (DDA)** raycasting technique, reminiscent of 90s classics like *Wolfenstein 3D* and *Doom*.
 
-![RAYFALL Preview](rayfall.vercel.app)
+![RAYFALL Preview](https://via.placeholder.com/800x450.png?text=RAYFALL+Tactical+Shooter+Simulation)
 
 ## 🚀 Features
 
