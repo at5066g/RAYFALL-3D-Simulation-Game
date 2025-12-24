@@ -1,13 +1,18 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [
-    react({
-      babel: {
-        plugins: [['babel-plugin-react-compiler']],
-      },
-    }),
-  ],
-})
+  plugins: [react()],
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    // esbuild is the default minifier in Vite 6, 
+    // it's faster and handles type-safe 'drop' options better.
+  },
+  esbuild: {
+    drop: ['console', 'debugger'],
+  },
+  server: {
+    port: 3000,
+  },
+});
