@@ -496,7 +496,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
   return (
     <div className="relative group select-none overflow-hidden bg-black border-[12px] border-neutral-900 shadow-2xl">
-      <canvas ref={canvasRef} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} className="block cursor-none" style={{ width: '800px', height: '600px' }} />
+      <canvas ref={canvasRef} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} className="block cursor-none" style={{ width: '1280px', height: '720px' }} />
       
       <Minimap gameState={uiState} />
       
@@ -538,7 +538,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
           {!isScoped && (
             <>
               <div className="absolute top-1/2 left-0 w-full h-[2px] bg-green-400 -translate-y-1/2 shadow-[0_0_2px_black]" />
-              <div className="absolute left-1/2 top-0 w-[2px] h-full bg-green-400 -translate-x-1/2 shadow-[0_0_2px_black]" />
+              <div className="absolute left-1/2 top-0 w-[2px] h-full bg-green-400 -translate-x-1/2 shadow-[0_0_4px_black]" />
             </>
           )}
           <div className="absolute inset-0 transition-opacity duration-75" style={{ opacity: hitMarkerOpacity }}>

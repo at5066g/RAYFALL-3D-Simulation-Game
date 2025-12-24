@@ -1,8 +1,8 @@
 
 import { CellType, type Vector2 } from './types';
 
-export const SCREEN_WIDTH = 640;
-export const SCREEN_HEIGHT = 480;
+export const SCREEN_WIDTH = 1280;
+export const SCREEN_HEIGHT = 720;
 export const TICK_RATE = 60;
 export const FOV = 0.66; // 66 degrees FOV roughly
 export const ROTATION_SPEED = 3.0; // Radians per second
