@@ -12,6 +12,7 @@ import {
   CellType, 
   Difficulty,
   type DifficultyLevel,
+  type Decal
 } from '../types';
 import { 
   SCREEN_WIDTH, 
@@ -72,7 +73,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   const currentFovScale = useRef(FOV);
 
   const walkCycle = useRef(0);
-  const lastStepTime = useRef(0);
   const recoilImpulse = useRef(0); 
   const lastShotTime = useRef(0);
   const lastDryFireTime = useRef(0);
@@ -84,7 +84,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   const [hitMarkerOpacity, setHitMarkerOpacity] = useState(0); 
   const [isHeadshot, setIsHeadshot] = useState(false);
   
-  // Settings State
   const [sensitivity, setSensitivity] = useState(1.0);
   const [isInfiniteAmmo, setIsInfiniteAmmo] = useState(false);
   const [isScoped, setIsScoped] = useState(false);
@@ -99,6 +98,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     enemies: [], 
     items: [],
     particles: [],
+    decals: [],
     map: WORLD_MAP,
     lastTime: performance.now(),
     score: 0,
@@ -152,9 +152,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     };
 
     const handleMouseUp = (e: MouseEvent) => { 
-      if (e.button === 0) {
-        isMouseDown.current = false;
-      }
+      if (e.button === 0) isMouseDown.current = false;
       if (e.button === 2) {
         isZooming.current = false;
         setIsScoped(false);
@@ -186,7 +184,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         } else {
             player.weaponIndex = (player.weaponIndex - 1 + WEAPONS.length) % WEAPONS.length;
         }
-        soundManager.current.playAmmoPickup(); // weapon switch sound
+        soundManager.current.playAmmoPickup(); 
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -213,6 +211,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         enemies: [],
         items: [],
         particles: [],
+        decals: [],
         map: WORLD_MAP,
         lastTime: performance.now(),
         score: 0,
@@ -232,7 +231,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       if (player.health <= 0) return;
       setIsReloading(true);
       
-      // Remove reload sound for M416 (Weapon Index 1) as requested to fix "weird sound"
       if (player.weaponIndex !== 1) {
         soundManager.current.playReload();
       }
@@ -267,7 +265,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   };
 
   const shoot = () => {
-    const { player, enemies, map } = stateRef.current;
+    const { player, enemies, map, decals } = stateRef.current;
     const weapon = WEAPONS[player.weaponIndex];
     const now = performance.now();
 
@@ -276,16 +274,10 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
     if (!isInfiniteAmmo) {
         if (player.ammo <= 0) {
-            if (player.ammoReserve > 0) {
-                // Auto reload if we have reserves. 
-                // Don't play dry fire here to avoid overlapping "weird" noise.
-                reload();
-            } else {
-                // Only play dry fire click if we are truly empty with no reserves.
-                if (now - lastDryFireTime.current > 400) {
-                    soundManager.current.playDryFire();
-                    lastDryFireTime.current = now;
-                }
+            if (player.ammoReserve > 0) reload();
+            else if (now - lastDryFireTime.current > 400) {
+                soundManager.current.playDryFire();
+                lastDryFireTime.current = now;
             }
             return;
         }
@@ -299,6 +291,27 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     if (shootTimer.current) clearTimeout(shootTimer.current);
     shootTimer.current = window.setTimeout(() => setIsShooting(false), Math.min(weapon.fireRate, 50));
 
+    // Find closest wall hit for Decal spawning
+    let mapX = Math.floor(player.pos.x);
+    let mapY = Math.floor(player.pos.y);
+    const deltaDistX = Math.abs(1 / player.dir.x);
+    const deltaDistY = Math.abs(1 / player.dir.y);
+    let stepX = player.dir.x < 0 ? -1 : 1;
+    let stepY = player.dir.y < 0 ? -1 : 1;
+    let sideDistX = player.dir.x < 0 ? (player.pos.x - mapX) * deltaDistX : (mapX + 1.0 - player.pos.x) * deltaDistX;
+    let sideDistY = player.dir.y < 0 ? (player.pos.y - mapY) * deltaDistY : (mapY + 1.0 - player.pos.y) * deltaDistY;
+    let side = 0;
+    while (map[mapX] && map[mapX][mapY] === 0) {
+      if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; }
+      else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
+    }
+    const wallDist = side === 0 ? (sideDistX - deltaDistX) : (sideDistY - deltaDistY);
+    let wallX = side === 0 ? player.pos.y + wallDist * player.dir.y : player.pos.x + wallDist * player.dir.x;
+    wallX -= Math.floor(wallX);
+    
+    // Create persistent wall decal
+    decals.push({ mapX, mapY, side, wallX, wallY: 0.5 + (Math.random() - 0.5) * 0.1, life: 1.0 });
+
     let closestEnemy: Enemy | null = null;
     let closestDist = Infinity;
     let hitRelativeY = 0;
@@ -308,7 +321,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       const dx = enemy.pos.x - player.pos.x, dy = enemy.pos.y - player.pos.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
       const dot = dx * player.dir.x + dy * player.dir.y;
-      if (dot > 0) {
+      if (dot > 0 && dist < wallDist) {
         const perpDist = Math.abs(dx * player.dir.y - dy * player.dir.x);
         if (perpDist < 0.5 && hasLineOfSight(player.pos, enemy.pos, map)) {
              const transformY = dist;
@@ -339,6 +352,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
            stateRef.current.items.push({
                id: ++itemIdCounter.current,
                pos: { x: target.pos.x, y: target.pos.y },
+               // Restored: Randomized drop between Health and Ammo
                textureId: Math.random() > 0.5 ? CellType.HEALTH_ORB : CellType.AMMO_BOX,
                spawnTime: performance.now()
            });
@@ -362,7 +376,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
   const updateAI = (dt: number, now: number) => {
     const { player, enemies, map } = stateRef.current;
-    const ENEMY_SPEED = 2.5, AGGRO_RANGE = 12.0, ATTACK_RANGE = 1.0, RANGED_RANGE = 9.0;
+    const ENEMY_SPEED = 2.5, AGGRO_RANGE = 12.0, ATTACK_RANGE = 1.0;
     
     let damageMelee = 10, damageRanged = 5, shootCooldown = 2500;
     if (difficulty === Difficulty.MEDIUM) {
@@ -395,7 +409,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
                     player.health -= damageMelee;
                     soundManager.current.playPlayerDamage();
                 }
-            } else if (dist < RANGED_RANGE && canSee) {
+            } else if (dist < 9.0 && canSee) {
                 if (now - enemy.lastAttackTime > shootCooldown) {
                     enemy.lastAttackTime = now;
                     player.health -= damageRanged;
@@ -412,10 +426,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     const dt = Math.min(0.1, (time - stateRef.current.lastTime) / 1000);
     stateRef.current.lastTime = time;
     
-    // Auto firing logic
-    if (isMouseDown.current && WEAPONS[stateRef.current.player.weaponIndex].isAuto) {
-        shoot();
-    }
+    if (isMouseDown.current && WEAPONS[stateRef.current.player.weaponIndex].isAuto) shoot();
 
     if (hitMarkerOpacity > 0) setHitMarkerOpacity(prev => Math.max(0, prev - dt * 4));
     if (stateRef.current.player.health > 0) {
@@ -424,6 +435,8 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         spawnEnemy(time);
         stateRef.current.particles.forEach(p => p.life -= dt * 2);
         stateRef.current.particles = stateRef.current.particles.filter(p => p.life > 0);
+        stateRef.current.decals.forEach(d => d.life -= dt * 0.1);
+        stateRef.current.decals = stateRef.current.decals.filter(d => d.life > 0);
     } else if (!isGameOver) setIsGameOver(true);
     render();
     setUiState({ ...stateRef.current });
@@ -443,22 +456,12 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     player.plane.y = -player.dir.x * currentFovScale.current;
     
     const now = performance.now();
-    const ITEM_LIFETIME = 5000;
-
     for (let i = items.length - 1; i >= 0; i--) {
         const item = items[i];
-        if (now - item.spawnTime > ITEM_LIFETIME) {
-            items.splice(i, 1);
-            continue;
-        }
+        if (now - item.spawnTime > 5000) { items.splice(i, 1); continue; }
         if (Math.sqrt((player.pos.x - item.pos.x)**2 + (player.pos.y - item.pos.y)**2) < 0.8) { 
-             if (item.textureId === CellType.HEALTH_ORB) { 
-                 soundManager.current.playHeal(); 
-                 player.health = Math.min(100, player.health + 30); 
-             } else { 
-                 soundManager.current.playAmmoPickup(); 
-                 player.ammoReserve = Math.min(MAX_RESERVE, player.ammoReserve + CLIP_SIZE * 2); 
-             }
+             if (item.textureId === CellType.HEALTH_ORB) { soundManager.current.playHeal(); player.health = Math.min(100, player.health + 30); }
+             else { soundManager.current.playAmmoPickup(); player.ammoReserve = Math.min(MAX_RESERVE, player.ammoReserve + CLIP_SIZE * 2); }
              items.splice(i, 1);
         }
     }
@@ -484,7 +487,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
   const render = () => {
     const ctx = canvasRef.current?.getContext('2d', { alpha: false });
-    if (ctx) raycaster.current.render(ctx, stateRef.current, texturesRef.current);
+    if (ctx) raycaster.current.render(ctx, stateRef.current, texturesRef.current, isShooting);
   };
 
   useEffect(() => { requestRef.current = requestAnimationFrame(tick); return () => cancelAnimationFrame(requestRef.current); }, [isPaused]); 
@@ -494,13 +497,13 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   return (
     <div className="relative group select-none overflow-hidden bg-black border-[12px] border-neutral-900 shadow-2xl">
       <canvas ref={canvasRef} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} className="block cursor-none" style={{ width: '800px', height: '600px' }} />
+      
       <Minimap gameState={uiState} />
       
       {/* TACTICAL HUD */}
       <div className="absolute top-0 right-0 p-10 flex flex-col items-end z-20 pointer-events-none">
           <div className="font-mono text-[10px] text-white/40 tracking-[0.3em] uppercase mb-1">Combat Rating</div>
           <div className="font-mono text-4xl font-black text-white">{uiState.score.toString().padStart(4, '0')}</div>
-          
           <div className="mt-4 flex flex-col items-end">
               <div className="font-mono text-[10px] text-green-500/60 tracking-[0.3em] uppercase mb-1">Arsenal</div>
               <div className="font-mono text-xl font-bold text-green-500 bg-green-500/10 px-3 py-1 border-r-2 border-green-500">
@@ -509,7 +512,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
           </div>
       </div>
 
-      {/* BOTTOM HUD */}
       <div className="absolute bottom-0 left-0 w-full p-10 flex justify-between items-end z-20 pointer-events-none">
          <div className="flex flex-col gap-1 pl-4 border-l-4 border-green-500">
              <div className="flex items-center gap-2 mb-1">
@@ -530,10 +532,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
              </div>
          </div>
       </div>
-      
-      {/* Vfx */}
-      {uiState.player.health < 30 && <div className="absolute inset-0 bg-red-600/5 pointer-events-none animate-pulse z-10" />}
-      {isHeadshot && <div className="absolute top-1/3 left-1/2 -translate-x-1/2 text-white font-mono text-2xl font-black uppercase tracking-[0.5em] z-40 bg-red-600 px-6 py-2">Critical</div>}
 
       {/* CROSSHAIR */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 pointer-events-none z-30">
@@ -565,18 +563,14 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       {!isScoped && (
         <div ref={weaponRef} className="absolute bottom-0 left-1/2 w-80 h-80 pointer-events-none z-20 origin-bottom flex items-end justify-center transition-transform duration-75">
           {uiState.player.weaponIndex === 0 ? (
-            /* MK-1 VISUALS (Standard Rifle) */
             <div className="relative w-20 h-52 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-lg">
                 <div className="absolute top-0 w-full h-12 bg-neutral-800 rounded-t-md" />
                 <div className="absolute top-14 left-1/2 -translate-x-1/2 w-8 h-14 bg-black/40 rounded-full" />
                 {isShooting && <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-500/30 rounded-full blur-2xl animate-ping" />}
             </div>
           ) : (
-            /* M416 VISUALS (Sleek Carbine) */
             <div className="relative w-28 h-60 flex flex-col items-center">
-                 {/* Barrel */}
                  <div className="w-6 h-32 bg-neutral-800 border-x-2 border-neutral-700 -mb-4 z-0" />
-                 {/* Body */}
                  <div className="relative w-24 h-44 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-xl z-10 overflow-hidden">
                     <div className="absolute top-0 w-full h-16 bg-neutral-800 border-b-2 border-neutral-700" />
                     <div className="absolute top-20 left-1/2 -translate-x-1/2 w-12 h-20 bg-black/60 rounded-md" />
@@ -588,14 +582,13 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         </div>
       )}
 
-      {/* PAUSE MENU */}
+      {/* PAUSE & GAMEOVER */}
       {isPaused && (
           <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center z-50">
               <h2 className="text-white font-mono text-5xl font-black mb-10 tracking-[0.2em]">TERMINAL PAUSE</h2>
-              
-              <div className="flex flex-col gap-6 w-72 mb-10">
+              <div className="flex flex-col gap-6 w-72 mb-10 text-white">
                   <div className="flex flex-col gap-2">
-                      <div className="flex justify-between font-mono text-xs text-white/60 uppercase">
+                      <div className="flex justify-between font-mono text-[10px] text-white/40 uppercase tracking-widest">
                           <span>Aim Sensitivity</span>
                           <span>{sensitivity.toFixed(1)}x</span>
                       </div>
@@ -605,32 +598,29 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
                           max="3.0" 
                           step="0.1" 
                           value={sensitivity} 
-                          onChange={(e) => setSensitivity(parseFloat(e.target.value))}
-                          className="w-full accent-green-500 bg-white/10"
+                          onChange={(e) => setSensitivity(parseFloat(e.target.value))} 
+                          className="w-full accent-green-500 bg-white/10 h-1 rounded-full appearance-none cursor-pointer" 
                       />
                   </div>
+                  
+                  {/* Restored: Infinite Ammo Toggle Button */}
                   <button 
-                      onClick={() => setIsInfiniteAmmo(!isInfiniteAmmo)}
-                      className={`w-full py-3 font-mono font-bold uppercase tracking-wider border transition-colors ${isInfiniteAmmo ? 'bg-green-600 border-green-400 text-white' : 'border-white/20 text-white/60 hover:border-white/40'}`}
+                      onClick={() => setIsInfiniteAmmo(!isInfiniteAmmo)} 
+                      className={`w-full py-4 font-mono font-black uppercase tracking-widest border transition-all ${isInfiniteAmmo ? 'bg-green-600 border-green-400 text-white' : 'border-white/20 text-white/60 hover:border-white/40'}`}
                   >
-                      Ammo: {isInfiniteAmmo ? 'Infinite' : 'Tactical'}
+                      Ammo: {isInfiniteAmmo ? 'Infinite' : 'Limited'}
                   </button>
-              </div>
 
-              <div className="flex flex-col gap-4 w-72">
-                  <button onClick={() => setIsPaused(false)} className="w-full py-4 bg-white text-black font-mono font-black uppercase tracking-widest hover:bg-neutral-200 transition-colors">Resume</button>
-                  <button onClick={onExit} className="w-full py-4 border-2 border-white text-white font-mono font-black uppercase tracking-widest hover:bg-white/10 transition-all">Abort Mission</button>
+                  <button onClick={() => setIsPaused(false)} className="py-4 bg-white text-black font-mono font-black uppercase tracking-widest hover:bg-neutral-200 transition-colors">Resume</button>
+                  <button onClick={onExit} className="py-4 border-2 border-white text-white font-mono font-black uppercase tracking-widest hover:bg-white hover:text-black transition-all">Abort Mission</button>
               </div>
           </div>
       )}
 
       {isGameOver && (
           <div className="absolute inset-0 bg-black flex flex-col items-center justify-center z-50">
-              <h1 className="text-7xl font-black text-red-600 font-mono mb-12 tracking-tighter">MISSION FAILED</h1>
-              <div className="flex gap-6">
-                  <button onClick={restartGame} className="px-12 py-5 bg-red-600 text-white font-mono font-black uppercase tracking-widest hover:scale-105 transition-transform">Redeploy</button>
-                  <button onClick={onExit} className="px-12 py-5 border-2 border-white text-white font-mono font-black uppercase tracking-widest hover:bg-white hover:text-black transition-all">Exit</button>
-              </div>
+              <h1 className="text-7xl font-black text-red-600 font-mono mb-12">MISSION FAILED</h1>
+              <button onClick={restartGame} className="px-12 py-5 bg-red-600 text-white font-mono font-black uppercase tracking-widest">Redeploy</button>
           </div>
       )}
     </div>

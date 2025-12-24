@@ -1,54 +1,119 @@
 
-import type { GameState, Player, Texture, Enemy, Item, Vector2 } from '../types';
-
-interface RenderableSprite {
-  pos: Vector2;
-  textureId: number;
-}
+import { CellType, type GameState, type Player, type Texture, type Enemy, type Item, type Vector2, type Decal } from '../types';
 
 export class Raycaster {
   private zBuffer: number[];
   private width: number;
   private height: number;
+  private offscreenCanvas: HTMLCanvasElement;
+  private offscreenCtx: CanvasRenderingContext2D;
+  private imageData: ImageData;
+  private buffer: Uint32Array;
   
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
     this.zBuffer = new Array(width).fill(0);
+    this.offscreenCanvas = document.createElement('canvas');
+    this.offscreenCanvas.width = width;
+    this.offscreenCanvas.height = height;
+    this.offscreenCtx = this.offscreenCanvas.getContext('2d', { alpha: false })!;
+    this.imageData = this.offscreenCtx.createImageData(width, height);
+    this.buffer = new Uint32Array(this.imageData.data.buffer);
   }
 
   public render(
     ctx: CanvasRenderingContext2D,
     gameState: GameState,
-    textures: Record<number, Texture>
+    textures: Record<number, Texture[]>,
+    isShooting: boolean = false
   ) {
-    const { player, map, enemies, items, particles } = gameState;
+    const { player, map, enemies, items, particles, decals } = gameState;
     const w = this.width;
     const h = this.height;
-    const horizonOffset = player.pitch;
+    const time = performance.now();
 
-    // 1. Clean Retro Background (Flat colors, no overlays)
-    ctx.fillStyle = '#1a1a1a'; // Ceiling
-    ctx.fillRect(0, 0, w, h / 2 + horizonOffset);
-    
-    ctx.fillStyle = '#333333'; // Floor
-    ctx.fillRect(0, h / 2 + horizonOffset, w, h);
+    // 1. Floor and Ceiling Casting (Raw Buffer manipulation for performance)
+    this.castFloorAndCeiling(player, textures, w, h);
+
+    // Apply pixel buffer to offscreen canvas
+    this.offscreenCtx.putImageData(this.imageData, 0, 0);
 
     // 2. Wall Casting
-    this.castWalls(ctx, player, map, textures, w, h);
+    this.castWalls(this.offscreenCtx, player, map, textures, decals, w, h, time);
 
-    // 3. Sprite Casting (Enemies + Items + Particles)
-    const allSprites: RenderableSprite[] = [...enemies, ...items, ...particles];
-    this.castSprites(ctx, player, allSprites, textures, w, h);
+    // 3. Sprite Casting
+    const allSprites = [...enemies, ...items, ...particles];
+    this.castSprites(this.offscreenCtx, player, allSprites, textures, w, h);
+
+    // 4. Muzzle Flash Lighting
+    if (isShooting) {
+        this.offscreenCtx.fillStyle = 'rgba(255, 255, 200, 0.15)';
+        this.offscreenCtx.fillRect(0, 0, w, h);
+    }
+
+    // Draw final output to main canvas
+    ctx.drawImage(this.offscreenCanvas, 0, 0);
+  }
+
+  private castFloorAndCeiling(player: Player, textures: Record<number, Texture[]>, w: number, h: number) {
+    const floorTexture = textures[CellType.FLOOR][0];
+    const ceilingTexture = textures[CellType.CEILING][0];
+    if (!floorTexture || !ceilingTexture) return;
+
+    const pitch = player.pitch;
+    const playerZ = 0.5 + player.z;
+
+    for (let y = 0; y < h; y++) {
+      const isFloor = y > h / 2 + pitch;
+      const p = isFloor ? (y - h / 2 - pitch) : (h / 2 - y + pitch);
+      
+      if (p === 0) continue;
+
+      const camZ = h * playerZ;
+      const rowDistance = camZ / p;
+
+      const floorStepX = rowDistance * (player.plane.x * 2) / w;
+      const floorStepY = rowDistance * (player.plane.y * 2) / w;
+
+      let floorX = player.pos.x + rowDistance * (player.dir.x - player.plane.x);
+      let floorY = player.pos.y + rowDistance * (player.dir.y - player.plane.y);
+
+      const fogDistance = 20.0; 
+      const fogAmount = Math.min(1, rowDistance / fogDistance);
+
+      for (let x = 0; x < w; x++) {
+        const tx = Math.floor(floorTexture.width * (floorX - Math.floor(floorX))) & (floorTexture.width - 1);
+        const ty = Math.floor(floorTexture.height * (floorY - Math.floor(floorY))) & (floorTexture.height - 1);
+
+        const texIndex = ty * floorTexture.width + tx;
+        let color = isFloor ? floorTexture.data[texIndex] : ceilingTexture.data[texIndex];
+
+        if (fogAmount > 0) {
+            const fogFactor = 1 - fogAmount * 0.7; 
+            const r = (color & 0xFF) * fogFactor;
+            const g = ((color >> 8) & 0xFF) * fogFactor;
+            const b = ((color >> 16) & 0xFF) * fogFactor;
+            color = (color & 0xFF000000) | (b << 16) | (g << 8) | r;
+        }
+
+        this.buffer[y * w + x] = color;
+
+        floorX += floorStepX;
+        floorY += floorStepY;
+      }
+    }
   }
 
   private castWalls(
     ctx: CanvasRenderingContext2D, 
     player: Player, 
     map: number[][], 
-    textures: Record<number, Texture>,
+    textures: Record<number, Texture[]>,
+    decals: Decal[],
     w: number, 
-    h: number
+    h: number,
+    time: number
   ) {
     for (let x = 0; x < w; x++) {
       const cameraX = 2 * x / w - 1; 
@@ -58,19 +123,10 @@ export class Raycaster {
       let mapX = Math.floor(player.pos.x);
       let mapY = Math.floor(player.pos.y);
 
-      let sideDistX;
-      let sideDistY;
-
       const deltaDistX = Math.abs(1 / rayDirX);
       const deltaDistY = Math.abs(1 / rayDirY);
 
-      let perpWallDist;
-      let stepX;
-      let stepY;
-
-      let hit = 0;
-      let side = 0;
-      let wallType = 0;
+      let stepX, stepY, sideDistX, sideDistY;
 
       if (rayDirX < 0) {
         stepX = -1;
@@ -88,6 +144,7 @@ export class Raycaster {
         sideDistY = (mapY + 1.0 - player.pos.y) * deltaDistY;
       }
 
+      let hit = 0, side = 0, wallType = 0;
       while (hit === 0) {
         if (sideDistX < sideDistY) {
           sideDistX += deltaDistX;
@@ -104,18 +161,19 @@ export class Raycaster {
         }
       }
 
-      if (side === 0) perpWallDist = (sideDistX - deltaDistX);
-      else perpWallDist = (sideDistY - deltaDistY);
-
+      const perpWallDist = side === 0 ? (sideDistX - deltaDistX) : (sideDistY - deltaDistY);
       this.zBuffer[x] = perpWallDist;
 
       const lineHeight = Math.floor(h / perpWallDist);
       const playerHeightOffset = (player.z * h) / perpWallDist;
       
-      let drawStart = -lineHeight / 2 + h / 2 + player.pitch + playerHeightOffset;
-      let drawEnd = lineHeight / 2 + h / 2 + player.pitch + playerHeightOffset;
+      const drawStart = -lineHeight / 2 + h / 2 + player.pitch + playerHeightOffset;
+      const drawEnd = lineHeight / 2 + h / 2 + player.pitch + playerHeightOffset;
 
-      const texture = textures[wallType] || textures[1];
+      const texFrames = textures[wallType] || textures[1];
+      const frameIdx = texFrames.length > 1 ? Math.floor(time / 200) % texFrames.length : 0;
+      const texture = texFrames[frameIdx];
+
       let wallX = side === 0 ? player.pos.y + perpWallDist * rayDirY : player.pos.x + perpWallDist * rayDirX;
       wallX -= Math.floor(wallX);
 
@@ -134,14 +192,21 @@ export class Raycaster {
         );
 
         if (side === 1) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'; 
             ctx.fillRect(x, clippedStart, 1, clippedEnd - clippedStart);
         }
 
-        const fogDistance = 14.0;
-        let fogAmount = Math.min(1, perpWallDist / fogDistance);
+        const sliceDecals = decals.filter(d => d.mapX === mapX && d.mapY === mapY && d.side === side && Math.abs(d.wallX - wallX) < 0.01);
+        sliceDecals.forEach(d => {
+            const decalY = drawStart + d.wallY * lineHeight;
+            ctx.fillStyle = `rgba(30, 30, 30, ${d.life})`;
+            ctx.fillRect(x, decalY - 2, 1, 4);
+        });
+
+        const fogDistance = 18.0;
+        const fogAmount = Math.min(1, perpWallDist / fogDistance);
         if (fogAmount > 0) {
-            ctx.fillStyle = `rgba(0, 0, 0, ${fogAmount * 0.85})`;
+            ctx.fillStyle = `rgba(30, 30, 40, ${fogAmount * 0.6})`; 
             ctx.fillRect(x, clippedStart, 1, clippedEnd - clippedStart);
         }
       }
@@ -151,8 +216,8 @@ export class Raycaster {
   private castSprites(
     ctx: CanvasRenderingContext2D,
     player: Player,
-    sprites: RenderableSprite[],
-    textures: Record<number, Texture>,
+    sprites: any[],
+    textures: Record<number, Texture[]>,
     w: number,
     h: number
   ) {
@@ -164,7 +229,7 @@ export class Raycaster {
       .sort((a, b) => b.dist - a.dist); 
 
     for (const item of spriteOrder) {
-        const { sprite } = item;
+        const { sprite, dist } = item;
         const spriteX = sprite.pos.x - player.pos.x;
         const spriteY = sprite.pos.y - player.pos.y;
         const invDet = 1.0 / (player.plane.x * player.dir.y - player.dir.x * player.plane.y);
@@ -178,19 +243,16 @@ export class Raycaster {
         const spriteHeight = Math.abs(Math.floor(h / transformY)); 
         const vOffset = player.pitch + (player.z * h) / transformY;
 
-        let drawStartY = -spriteHeight / 2 + h / 2 + vOffset;
-        let drawEndY = spriteHeight / 2 + h / 2 + vOffset;
+        const drawStartY = -spriteHeight / 2 + h / 2 + vOffset;
+        const drawEndY = spriteHeight / 2 + h / 2 + vOffset;
 
         const spriteWidth = Math.abs(Math.floor(h / transformY)); 
-        let drawStartX = Math.max(0, -spriteWidth / 2 + spriteScreenX);
-        let drawEndX = Math.min(w - 1, spriteWidth / 2 + spriteScreenX);
+        const drawStartX = Math.max(0, -spriteWidth / 2 + spriteScreenX);
+        const drawEndX = Math.min(w - 1, spriteWidth / 2 + spriteScreenX);
         
-        const texture = textures[sprite.textureId];
+        const texture = textures[sprite.textureId]?.[0];
         if (!texture) continue;
 
-        // SPRITE TRANSPARENCY FIX:
-        // We draw the sprite slice by slice. We NO LONGER call fillRect here
-        // because it draws a black box regardless of the sprite's alpha channel.
         for (let stripe = Math.floor(drawStartX); stripe < Math.floor(drawEndX); stripe++) {
             const texX = Math.floor((stripe - (-spriteWidth / 2 + spriteScreenX)) * texture.width / spriteWidth);
             if (transformY > 0 && stripe > 0 && stripe < w && transformY < this.zBuffer[stripe]) {
@@ -204,8 +266,7 @@ export class Raycaster {
                         stripe, clippedYStart, 1, clippedYEnd - clippedYStart
                     );
                     
-                    // Note: If you want fog on sprites, it must be done via globalCompositeOperation
-                    // or by modifying the texture source. Standard fillRect creates the 'black box'.
+                    // Fog was removed from here to eliminate the black border artifact around transparent sprite regions.
                 }
             }
         }
