@@ -3,24 +3,24 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Raycaster } from '../engine/Raycaster';
 import { generateTextures } from '../engine/textures';
 import { SoundManager } from '../engine/SoundManager';
-import { 
-  type GameState, 
-  type Player, 
-  type Vector2, 
-  type Enemy, 
-  EnemyState, 
-  CellType, 
+import {
+  type GameState,
+  type Player,
+  type Vector2,
+  type Enemy,
+  EnemyState,
+  CellType,
   Difficulty,
   type DifficultyLevel,
   type Decal
 } from '../types';
-import { 
-  SCREEN_WIDTH, 
-  SCREEN_HEIGHT, 
-  WORLD_MAP, 
-  MOVE_SPEED, 
-  SPAWN_POINTS, 
-  MAX_ENEMIES, 
+import {
+  SCREEN_WIDTH,
+  SCREEN_HEIGHT,
+  WORLD_MAP,
+  MOVE_SPEED,
+  SPAWN_POINTS,
+  MAX_ENEMIES,
   SPAWN_INTERVAL,
   FOV,
   CLIP_SIZE,
@@ -36,10 +36,10 @@ const GRAVITY = 25.0;
 const JUMP_FORCE = 8.5;
 
 const safeRequestPointerLock = (element: HTMLCanvasElement) => {
-    try {
-        const promise = (element as any).requestPointerLock({ unadjustedMovement: true }) || (element as any).requestPointerLock();
-        if (promise && typeof promise.catch === 'function') promise.catch(() => {});
-    } catch (e) {}
+  try {
+    const promise = (element as any).requestPointerLock({ unadjustedMovement: true }) || (element as any).requestPointerLock();
+    if (promise && typeof promise.catch === 'function') promise.catch(() => { });
+  } catch (e) { }
 };
 
 const createInitialPlayer = (): Player => ({
@@ -66,24 +66,24 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   const requestRef = useRef<number>(0);
   const raycaster = useRef(new Raycaster(SCREEN_WIDTH, SCREEN_HEIGHT));
   const soundManager = useRef(new SoundManager());
-  
+
   const keys = useRef<Record<string, boolean>>({});
   const isMouseDown = useRef(false);
   const isZooming = useRef(false);
   const currentFovScale = useRef(FOV);
 
   const walkCycle = useRef(0);
-  const recoilImpulse = useRef(0); 
+  const recoilImpulse = useRef(0);
   const lastShotTime = useRef(0);
   const lastDryFireTime = useRef(0);
-  
+
   const [isShooting, setIsShooting] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const [isGameOver, setIsGameOver] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [hitMarkerOpacity, setHitMarkerOpacity] = useState(0); 
+  const [hitMarkerOpacity, setHitMarkerOpacity] = useState(0);
   const [isHeadshot, setIsHeadshot] = useState(false);
-  
+
   const [sensitivity, setSensitivity] = useState(1.0);
   const [isInfiniteAmmo, setIsInfiniteAmmo] = useState(false);
   const [isScoped, setIsScoped] = useState(false);
@@ -95,7 +95,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
   const stateRef = useRef<GameState>({
     player: createInitialPlayer(),
-    enemies: [], 
+    enemies: [],
     items: [],
     particles: [],
     decals: [],
@@ -108,17 +108,17 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   const texturesRef = useRef(generateTextures());
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => { 
-        if (e.code === 'Escape') {
-            setIsPaused(prev => !prev);
-        }
-        if (e.code === 'KeyR') reload();
-        if (e.code === 'Space') jump();
-        keys.current[e.code] = true; 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') {
+        setIsPaused(prev => !prev);
+      }
+      if (e.code === 'KeyR') reload();
+      if (e.code === 'Space') jump();
+      keys.current[e.code] = true;
     };
     const handleKeyUp = (e: KeyboardEvent) => { keys.current[e.code] = false; };
     const handleLockChange = () => {
-        if (!document.pointerLockElement && !isGameOver) setIsPaused(true);
+      if (!document.pointerLockElement && !isGameOver) setIsPaused(true);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -129,7 +129,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       window.removeEventListener('keyup', handleKeyUp);
       document.removeEventListener('pointerlockchange', handleLockChange);
     };
-  }, [isGameOver]); 
+  }, [isGameOver]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -142,8 +142,8 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         soundManager.current.init();
       } else {
         if (e.button === 0) {
-            isMouseDown.current = true;
-            shoot(); 
+          isMouseDown.current = true;
+          shoot();
         } else if (e.button === 2) {
           isZooming.current = true;
           setIsScoped(true);
@@ -151,7 +151,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       }
     };
 
-    const handleMouseUp = (e: MouseEvent) => { 
+    const handleMouseUp = (e: MouseEvent) => {
       if (e.button === 0) isMouseDown.current = false;
       if (e.button === 2) {
         isZooming.current = false;
@@ -165,7 +165,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         const { player } = stateRef.current;
         const baseSensitivityX = isZooming.current ? 0.0005 : 0.0022;
         const sensitivityX = baseSensitivityX * sensitivity;
-        const sensitivityY = 1.0; 
+        const sensitivityY = 1.0;
         const rotX = -e.movementX * sensitivityX;
         const oldDirX = player.dir.x;
         player.dir.x = player.dir.x * Math.cos(rotX) - player.dir.y * Math.sin(rotX);
@@ -177,14 +177,14 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     };
 
     const handleWheel = (e: WheelEvent) => {
-        if (isPaused || isReloading || stateRef.current.player.health <= 0) return;
-        const { player } = stateRef.current;
-        if (e.deltaY > 0) {
-            player.weaponIndex = (player.weaponIndex + 1) % WEAPONS.length;
-        } else {
-            player.weaponIndex = (player.weaponIndex - 1 + WEAPONS.length) % WEAPONS.length;
-        }
-        soundManager.current.playAmmoPickup(); 
+      if (isPaused || isReloading || stateRef.current.player.health <= 0) return;
+      const { player } = stateRef.current;
+      if (e.deltaY > 0) {
+        player.weaponIndex = (player.weaponIndex + 1) % WEAPONS.length;
+      } else {
+        player.weaponIndex = (player.weaponIndex - 1 + WEAPONS.length) % WEAPONS.length;
+      }
+      soundManager.current.playAmmoPickup();
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -198,23 +198,23 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       canvas.removeEventListener('mouseup', handleMouseUp);
       canvas.removeEventListener('wheel', handleWheel);
     };
-  }, [isPaused, isReloading, sensitivity, isInfiniteAmmo]); 
+  }, [isPaused, isReloading, sensitivity, isInfiniteAmmo]);
 
   const jump = () => {
-      const { player } = stateRef.current;
-      if (player.z === 0) player.vz = JUMP_FORCE;
+    const { player } = stateRef.current;
+    if (player.z === 0) player.vz = JUMP_FORCE;
   };
 
   const restartGame = () => {
     stateRef.current = {
-        player: createInitialPlayer(),
-        enemies: [],
-        items: [],
-        particles: [],
-        decals: [],
-        map: WORLD_MAP,
-        lastTime: performance.now(),
-        score: 0,
+      player: createInitialPlayer(),
+      enemies: [],
+      items: [],
+      particles: [],
+      decals: [],
+      map: WORLD_MAP,
+      lastTime: performance.now(),
+      score: 0,
     };
     lastSpawnTime.current = performance.now();
     recoilImpulse.current = 0;
@@ -226,22 +226,22 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   };
 
   const reload = () => {
-      const { player } = stateRef.current;
-      if (isInfiniteAmmo || isReloading || player.ammo === CLIP_SIZE || player.ammoReserve === 0) return;
-      if (player.health <= 0) return;
-      setIsReloading(true);
-      
-      if (player.weaponIndex !== 1) {
-        soundManager.current.playReload();
-      }
+    const { player } = stateRef.current;
+    if (isInfiniteAmmo || isReloading || player.ammo === CLIP_SIZE || player.ammoReserve === 0) return;
+    if (player.health <= 0) return;
+    setIsReloading(true);
 
-      setTimeout(() => {
-          const needed = CLIP_SIZE - player.ammo;
-          const available = Math.min(needed, player.ammoReserve);
-          player.ammo += available;
-          player.ammoReserve -= available;
-          setIsReloading(false);
-      }, RELOAD_TIME);
+    if (player.weaponIndex !== 1) {
+      soundManager.current.playReload();
+    }
+
+    setTimeout(() => {
+      const needed = CLIP_SIZE - player.ammo;
+      const available = Math.min(needed, player.ammoReserve);
+      player.ammo += available;
+      player.ammoReserve -= available;
+      setIsReloading(false);
+    }, RELOAD_TIME);
   };
 
   const spawnEnemy = (now: number) => {
@@ -250,11 +250,11 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     const point = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
     const dx = point.x - stateRef.current.player.pos.x;
     const dy = point.y - stateRef.current.player.pos.y;
-    if (Math.sqrt(dx*dx + dy*dy) < 5.0) return; 
+    if (Math.sqrt(dx * dx + dy * dy) < 5.0) return;
     stateRef.current.enemies.push({
       id: ++enemyIdCounter.current,
       pos: { x: point.x, y: point.y },
-      dir: { x: 0, y: 1 }, 
+      dir: { x: 0, y: 1 },
       state: EnemyState.IDLE,
       health: 100,
       textureId: CellType.ENEMY_GUARD,
@@ -273,15 +273,15 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     if (now - lastShotTime.current < weapon.fireRate) return;
 
     if (!isInfiniteAmmo) {
-        if (player.ammo <= 0) {
-            if (player.ammoReserve > 0) reload();
-            else if (now - lastDryFireTime.current > 400) {
-                soundManager.current.playDryFire();
-                lastDryFireTime.current = now;
-            }
-            return;
+      if (player.ammo <= 0) {
+        if (player.ammoReserve > 0) reload();
+        else if (now - lastDryFireTime.current > 400) {
+          soundManager.current.playDryFire();
+          lastDryFireTime.current = now;
         }
-        player.ammo--;
+        return;
+      }
+      player.ammo--;
     }
 
     lastShotTime.current = now;
@@ -308,7 +308,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     const wallDist = side === 0 ? (sideDistX - deltaDistX) : (sideDistY - deltaDistY);
     let wallX = side === 0 ? player.pos.y + wallDist * player.dir.y : player.pos.x + wallDist * player.dir.x;
     wallX -= Math.floor(wallX);
-    
+
     // Create persistent wall decal
     decals.push({ mapX, mapY, side, wallX, wallY: 0.5 + (Math.random() - 0.5) * 0.1, life: 1.0 });
 
@@ -319,57 +319,60 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     enemies.forEach((enemy: Enemy) => {
       if (enemy.health <= 0) return;
       const dx = enemy.pos.x - player.pos.x, dy = enemy.pos.y - player.pos.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
+      const dist = Math.sqrt(dx * dx + dy * dy);
       const dot = dx * player.dir.x + dy * player.dir.y;
       if (dot > 0 && dist < wallDist) {
         const perpDist = Math.abs(dx * player.dir.y - dy * player.dir.x);
         if (perpDist < 0.5 && hasLineOfSight(player.pos, enemy.pos, map)) {
-             const transformY = dist;
-             const vOffset = player.pitch + (player.z * SCREEN_HEIGHT) / transformY;
-             const spriteHeight = SCREEN_HEIGHT / transformY;
-             const drawStartY = -spriteHeight / 2 + SCREEN_HEIGHT / 2 + vOffset;
-             const drawEndY = spriteHeight / 2 + SCREEN_HEIGHT / 2 + vOffset;
-             const crosshairY = SCREEN_HEIGHT / 2;
-             if (crosshairY >= drawStartY && crosshairY <= drawEndY) {
-                 if (dist < closestDist) { closestDist = dist; closestEnemy = enemy; hitRelativeY = (crosshairY - drawStartY) / (drawEndY - drawStartY); }
-             }
+          const transformY = dist;
+          // Apply Zoom to Hit Detection (Match Raycaster Logic)
+          const zoom = FOV / currentFovScale.current;
+          const vOffset = player.pitch + (player.z * SCREEN_HEIGHT * zoom) / transformY;
+          const spriteHeight = (SCREEN_HEIGHT / transformY) * zoom;
+
+          const drawStartY = -spriteHeight / 2 + SCREEN_HEIGHT / 2 + vOffset;
+          const drawEndY = spriteHeight / 2 + SCREEN_HEIGHT / 2 + vOffset;
+          const crosshairY = SCREEN_HEIGHT / 2;
+          if (crosshairY >= drawStartY && crosshairY <= drawEndY) {
+            if (dist < closestDist) { closestDist = dist; closestEnemy = enemy; hitRelativeY = (crosshairY - drawStartY) / (drawEndY - drawStartY); }
+          }
         }
       }
     });
 
     if (closestEnemy) {
-       const target = closestEnemy as Enemy;
-       const isHead = hitRelativeY < 0.25; 
-       target.health -= isHead ? (weapon.damage * weapon.headshotMultiplier) : weapon.damage; 
-       setHitMarkerOpacity(1.0);
-       if (isHead) {
-         setIsHeadshot(true);
-         setTimeout(() => setIsHeadshot(false), 200);
-       }
-       if (target.health <= 0) {
-           soundManager.current.playEnemyDeath();
-           stateRef.current.score += isHead ? 2 : 1; 
-           stateRef.current.items.push({
-               id: ++itemIdCounter.current,
-               pos: { x: target.pos.x, y: target.pos.y },
-               // Restored: Randomized drop between Health and Ammo
-               textureId: Math.random() > 0.5 ? CellType.HEALTH_ORB : CellType.AMMO_BOX,
-               spawnTime: performance.now()
-           });
-       } else {
-           soundManager.current.playEnemyHit();
-           target.state = EnemyState.CHASE;
-       }
+      const target = closestEnemy as Enemy;
+      const isHead = hitRelativeY < 0.25;
+      target.health -= isHead ? (weapon.damage * weapon.headshotMultiplier) : weapon.damage;
+      setHitMarkerOpacity(1.0);
+      if (isHead) {
+        setIsHeadshot(true);
+        setTimeout(() => setIsHeadshot(false), 200);
+      }
+      if (target.health <= 0) {
+        soundManager.current.playEnemyDeath();
+        stateRef.current.score += isHead ? 2 : 1;
+        stateRef.current.items.push({
+          id: ++itemIdCounter.current,
+          pos: { x: target.pos.x, y: target.pos.y },
+          // Restored: Randomized drop between Health and Ammo
+          textureId: Math.random() > 0.5 ? CellType.HEALTH_ORB : CellType.AMMO_BOX,
+          spawnTime: performance.now()
+        });
+      } else {
+        soundManager.current.playEnemyHit();
+        target.state = EnemyState.CHASE;
+      }
     }
   };
 
   const hasLineOfSight = (p1: Vector2, p2: Vector2, map: number[][]): boolean => {
-    const steps = 25; 
+    const steps = 25;
     const dx = (p2.x - p1.x) / steps, dy = (p2.y - p1.y) / steps;
     let cx = p1.x, cy = p1.y;
     for (let i = 0; i < steps; i++) {
-        cx += dx; cy += dy;
-        if (map[Math.floor(cx)]?.[Math.floor(cy)] > 0) return false;
+      cx += dx; cy += dy;
+      if (map[Math.floor(cx)]?.[Math.floor(cy)] > 0) return false;
     }
     return true;
   };
@@ -377,99 +380,109 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   const updateAI = (dt: number, now: number) => {
     const { player, enemies, map } = stateRef.current;
     const ENEMY_SPEED = 2.5, AGGRO_RANGE = 12.0, ATTACK_RANGE = 1.0;
-    
+
     let damageMelee = 10, damageRanged = 5, shootCooldown = 2500;
     if (difficulty === Difficulty.MEDIUM) {
-        damageMelee = 20; damageRanged = 10; shootCooldown = 1800;
+      damageMelee = 20; damageRanged = 10; shootCooldown = 1800;
     } else if (difficulty === Difficulty.HARD) {
-        damageMelee = 35; damageRanged = 20; shootCooldown = 1200;
+      damageMelee = 35; damageRanged = 20; shootCooldown = 1200;
     }
 
     stateRef.current.enemies = enemies.filter(e => e.health > 0);
     stateRef.current.enemies.forEach((enemy: Enemy) => {
-        const dx = player.pos.x - enemy.pos.x, dy = player.pos.y - enemy.pos.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const canSee = hasLineOfSight(enemy.pos, player.pos, map);
+      const dx = player.pos.x - enemy.pos.x, dy = player.pos.y - enemy.pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const canSee = hasLineOfSight(enemy.pos, player.pos, map);
 
-        if (enemy.state === EnemyState.IDLE && dist < AGGRO_RANGE && canSee) {
-            enemy.state = EnemyState.CHASE;
+      if (enemy.state === EnemyState.IDLE && dist < AGGRO_RANGE && canSee) {
+        enemy.state = EnemyState.CHASE;
+      }
+
+      if (enemy.state === EnemyState.CHASE) {
+        if (dist > ATTACK_RANGE) {
+          const dirX = dx / dist, dirY = dy / dist;
+          const moveStep = ENEMY_SPEED * dt;
+          if (map[Math.floor(enemy.pos.x + dirX * moveStep)]?.[Math.floor(enemy.pos.y)] === 0) enemy.pos.x += dirX * moveStep;
+          if (map[Math.floor(enemy.pos.x)]?.[Math.floor(enemy.pos.y + dirY * moveStep)] === 0) enemy.pos.y += dirY * moveStep;
         }
 
-        if (enemy.state === EnemyState.CHASE) {
-            if (dist > ATTACK_RANGE) {
-                const dirX = dx / dist, dirY = dy / dist;
-                const moveStep = ENEMY_SPEED * dt;
-                if (map[Math.floor(enemy.pos.x + dirX * moveStep)]?.[Math.floor(enemy.pos.y)] === 0) enemy.pos.x += dirX * moveStep;
-                if (map[Math.floor(enemy.pos.x)]?.[Math.floor(enemy.pos.y + dirY * moveStep)] === 0) enemy.pos.y += dirY * moveStep;
-            }
-
-            if (dist <= ATTACK_RANGE) {
-                if (now - enemy.lastAttackTime > 1000) {
-                    enemy.lastAttackTime = now;
-                    player.health -= damageMelee;
-                    soundManager.current.playPlayerDamage();
-                }
-            } else if (dist < 9.0 && canSee) {
-                if (now - enemy.lastAttackTime > shootCooldown) {
-                    enemy.lastAttackTime = now;
-                    player.health -= damageRanged;
-                    soundManager.current.playEnemyShoot();
-                    soundManager.current.playPlayerDamage();
-                }
-            }
+        if (dist <= ATTACK_RANGE) {
+          if (now - enemy.lastAttackTime > 1000) {
+            enemy.lastAttackTime = now;
+            player.health -= damageMelee;
+            soundManager.current.playPlayerDamage();
+          }
+        } else if (dist < 9.0 && canSee) {
+          if (now - enemy.lastAttackTime > shootCooldown) {
+            enemy.lastAttackTime = now;
+            player.health -= damageRanged;
+            soundManager.current.playEnemyShoot();
+            soundManager.current.playPlayerDamage();
+          }
         }
+      }
     });
   };
+
+  const lastUiUpdate = useRef(0);
 
   const tick = (time: number) => {
     if (isPaused) { stateRef.current.lastTime = time; requestRef.current = requestAnimationFrame(tick); return; }
     const dt = Math.min(0.1, (time - stateRef.current.lastTime) / 1000);
     stateRef.current.lastTime = time;
-    
+
     if (isMouseDown.current && WEAPONS[stateRef.current.player.weaponIndex].isAuto) shoot();
 
     if (hitMarkerOpacity > 0) setHitMarkerOpacity(prev => Math.max(0, prev - dt * 4));
     if (stateRef.current.player.health > 0) {
-        updatePhysics(dt);
-        updateAI(dt, time);
-        spawnEnemy(time);
-        stateRef.current.particles.forEach(p => p.life -= dt * 2);
-        stateRef.current.particles = stateRef.current.particles.filter(p => p.life > 0);
-        stateRef.current.decals.forEach(d => d.life -= dt * 0.1);
-        stateRef.current.decals = stateRef.current.decals.filter(d => d.life > 0);
+      updatePhysics(dt);
+      updateAI(dt, time);
+      spawnEnemy(time);
+      stateRef.current.particles.forEach(p => p.life -= dt * 2);
+      stateRef.current.particles = stateRef.current.particles.filter(p => p.life > 0);
+      stateRef.current.decals.forEach(d => d.life -= dt * 0.1);
+      stateRef.current.decals = stateRef.current.decals.filter(d => d.life > 0);
     } else if (!isGameOver) setIsGameOver(true);
+
+    // Render the game (Canvsa) - Always run at full speed
     render();
-    setUiState({ ...stateRef.current });
+
+    // Update UI (React) - Throttled to ~10-15 FPS to prevent React overhead lag
+    if (time - lastUiUpdate.current > 100) { // 100ms = 10 updates per second
+      lastUiUpdate.current = time;
+      setUiState({ ...stateRef.current });
+    }
+
     requestRef.current = requestAnimationFrame(tick);
   };
 
   const updatePhysics = (dt: number) => {
     const { player, map, items } = stateRef.current;
     if (player.z > 0 || player.vz !== 0) {
-        player.vz -= GRAVITY * dt;
-        player.z += player.vz * dt;
-        if (player.z < 0) { player.z = 0; player.vz = 0; }
+      player.vz -= GRAVITY * dt;
+      player.z += player.vz * dt;
+      if (player.z < 0) { player.z = 0; player.vz = 0; }
     }
-    const targetFov = isZooming.current ? 0.22 : FOV; 
+    const targetFov = isZooming.current ? 0.33 : FOV; // 0.33 = 2x Zoom (0.66 / 2)
     currentFovScale.current += (targetFov - currentFovScale.current) * 8.0 * dt;
     player.plane.x = player.dir.y * currentFovScale.current;
     player.plane.y = -player.dir.x * currentFovScale.current;
-    
+
     const now = performance.now();
     for (let i = items.length - 1; i >= 0; i--) {
-        const item = items[i];
-        if (now - item.spawnTime > 5000) { items.splice(i, 1); continue; }
-        if (Math.sqrt((player.pos.x - item.pos.x)**2 + (player.pos.y - item.pos.y)**2) < 0.8) { 
-             if (item.textureId === CellType.HEALTH_ORB) { soundManager.current.playHeal(); player.health = Math.min(100, player.health + 30); }
-             else { soundManager.current.playAmmoPickup(); player.ammoReserve = Math.min(MAX_RESERVE, player.ammoReserve + CLIP_SIZE * 2); }
-             items.splice(i, 1);
-        }
+      const item = items[i];
+      if (now - item.spawnTime > 5000) { items.splice(i, 1); continue; }
+      if (Math.sqrt((player.pos.x - item.pos.x) ** 2 + (player.pos.y - item.pos.y) ** 2) < 0.8) {
+        if (item.textureId === CellType.HEALTH_ORB) { soundManager.current.playHeal(); player.health = Math.min(100, player.health + 30); }
+        else { soundManager.current.playAmmoPickup(); player.ammoReserve = Math.min(MAX_RESERVE, player.ammoReserve + CLIP_SIZE * 2); }
+        items.splice(i, 1);
+      }
     }
 
     let dx = 0, dy = 0;
     if (keys.current['KeyW']) { dx += player.dir.x; dy += player.dir.y; }
     if (keys.current['KeyS']) { dx -= player.dir.x; dy -= player.dir.y; }
-    if (keys.current['KeyA']) { dx -= player.dir.y; dy += player.dir.x; } 
+    if (keys.current['KeyA']) { dx -= player.dir.y; dy += player.dir.x; }
     if (keys.current['KeyD']) { dx += player.dir.y; dy -= player.dir.x; }
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len > 0) {
@@ -480,71 +493,72 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     }
     if (recoilImpulse.current > 0) recoilImpulse.current = Math.max(0, recoilImpulse.current - dt * 8);
     if (weaponRef.current) {
-        const bob = len > 0 && player.z === 0 ? Math.sin(walkCycle.current) * 10 : 0;
-        weaponRef.current.style.transform = `translateX(-50%) translateY(${25 + Math.abs(bob) + recoilImpulse.current * 45}px) scale(${isZooming.current ? 1.15 : 1})`;
+      const bob = len > 0 && player.z === 0 ? Math.sin(walkCycle.current) * 10 : 0;
+      weaponRef.current.style.transform = `translateX(-50%) translateY(${25 + Math.abs(bob) + recoilImpulse.current * 45}px) scale(${isZooming.current ? 1.15 : 1})`;
     }
   };
 
   const render = () => {
     const ctx = canvasRef.current?.getContext('2d', { alpha: false });
-    if (ctx) raycaster.current.render(ctx, stateRef.current, texturesRef.current, isShooting);
+    const zoom = FOV / currentFovScale.current;
+    if (ctx) raycaster.current.render(ctx, stateRef.current, texturesRef.current, isShooting, zoom);
   };
 
-  useEffect(() => { requestRef.current = requestAnimationFrame(tick); return () => cancelAnimationFrame(requestRef.current); }, [isPaused]); 
+  useEffect(() => { requestRef.current = requestAnimationFrame(tick); return () => cancelAnimationFrame(requestRef.current); }, [isPaused]);
 
   const currentWeapon = WEAPONS[uiState.player.weaponIndex];
 
   return (
     <div className="relative group select-none overflow-hidden bg-black border-[12px] border-neutral-900 shadow-2xl">
       <canvas ref={canvasRef} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} className="block cursor-none" style={{ width: '1280px', height: '720px' }} />
-      
+
       <Minimap gameState={uiState} />
-      
+
       {/* TACTICAL HUD */}
       <div className="absolute top-0 right-0 p-10 flex flex-col items-end z-20 pointer-events-none">
-          <div className="font-mono text-[10px] text-white/40 tracking-[0.3em] uppercase mb-1">Combat Rating</div>
-          <div className="font-mono text-4xl font-black text-white">{uiState.score.toString().padStart(4, '0')}</div>
-          <div className="mt-4 flex flex-col items-end">
-              <div className="font-mono text-[10px] text-green-500/60 tracking-[0.3em] uppercase mb-1">Arsenal</div>
-              <div className="font-mono text-xl font-bold text-green-500 bg-green-500/10 px-3 py-1 border-r-2 border-green-500">
-                {currentWeapon.name}
-              </div>
+        <div className="font-mono text-[10px] text-white/40 tracking-[0.3em] uppercase mb-1">Combat Rating</div>
+        <div className="font-mono text-4xl font-black text-white">{uiState.score.toString().padStart(4, '0')}</div>
+        <div className="mt-4 flex flex-col items-end">
+          <div className="font-mono text-[10px] text-green-500/60 tracking-[0.3em] uppercase mb-1">Arsenal</div>
+          <div className="font-mono text-xl font-bold text-green-500 bg-green-500/10 px-3 py-1 border-r-2 border-green-500">
+            {currentWeapon.name}
           </div>
+        </div>
       </div>
 
       <div className="absolute bottom-0 left-0 w-full p-10 flex justify-between items-end z-20 pointer-events-none">
-         <div className="flex flex-col gap-1 pl-4 border-l-4 border-green-500">
-             <div className="flex items-center gap-2 mb-1">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 11h-4v4h-4v-4H6v-4h4V6h4v4h4v4z"/></svg>
-                <div className="text-white/40 text-[10px] tracking-[0.2em] uppercase font-mono">Vitality Scan</div>
-             </div>
-             <div className={`font-mono text-5xl font-black leading-none ${uiState.player.health > 30 ? 'text-white' : 'text-red-500 animate-pulse'}`}>
-                 {Math.ceil(uiState.player.health)}%
-             </div>
-         </div>
-         <div className="text-right pr-4 border-r-4 border-white">
-             <div className="flex items-center justify-end gap-2 mb-1">
-                <div className="text-white/40 text-[10px] tracking-[0.2em] uppercase font-mono">Munitions</div>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M14.5 2h-5L7 7v15h10V7l-2.5-5zm-3.5 13h2v2h-2v-2zm0-4h2v2h-2v-2z"/></svg>
-             </div>
-             <div className="text-white font-mono text-5xl font-black leading-none">
-                {isInfiniteAmmo ? '∞' : uiState.player.ammo}<span className="text-xl text-white/20 ml-2">[{isInfiniteAmmo ? '∞' : uiState.player.ammoReserve}]</span>
-             </div>
-         </div>
+        <div className="flex flex-col gap-1 pl-4 border-l-4 border-green-500">
+          <div className="flex items-center gap-2 mb-1">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 11h-4v4h-4v-4H6v-4h4V6h4v4h4v4z" /></svg>
+            <div className="text-white/40 text-[10px] tracking-[0.2em] uppercase font-mono">Vitality Scan</div>
+          </div>
+          <div className={`font-mono text-5xl font-black leading-none ${uiState.player.health > 30 ? 'text-white' : 'text-red-500 animate-pulse'}`}>
+            {Math.ceil(uiState.player.health)}%
+          </div>
+        </div>
+        <div className="text-right pr-4 border-r-4 border-white">
+          <div className="flex items-center justify-end gap-2 mb-1">
+            <div className="text-white/40 text-[10px] tracking-[0.2em] uppercase font-mono">Munitions</div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M14.5 2h-5L7 7v15h10V7l-2.5-5zm-3.5 13h2v2h-2v-2zm0-4h2v2h-2v-2z" /></svg>
+          </div>
+          <div className="text-white font-mono text-5xl font-black leading-none">
+            {isInfiniteAmmo ? '∞' : uiState.player.ammo}<span className="text-xl text-white/20 ml-2">[{isInfiniteAmmo ? '∞' : uiState.player.ammoReserve}]</span>
+          </div>
+        </div>
       </div>
 
       {/* CROSSHAIR */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 pointer-events-none z-30">
-          {!isScoped && (
-            <>
-              <div className="absolute top-1/2 left-0 w-full h-[2px] bg-green-400 -translate-y-1/2 shadow-[0_0_2px_black]" />
-              <div className="absolute left-1/2 top-0 w-[2px] h-full bg-green-400 -translate-x-1/2 shadow-[0_0_4px_black]" />
-            </>
-          )}
-          <div className="absolute inset-0 transition-opacity duration-75" style={{ opacity: hitMarkerOpacity }}>
-              <div className="absolute top-1/2 left-0 w-full h-[2px] bg-white -translate-y-1/2 shadow-[0_0_4px_white]" />
-              <div className="absolute left-1/2 top-0 w-[2px] h-full bg-white -translate-x-1/2 shadow-[0_0_4px_white]" />
-          </div>
+        {!isScoped && (
+          <>
+            <div className="absolute top-1/2 left-0 w-full h-[2px] bg-green-400 -translate-y-1/2 shadow-[0_0_2px_black]" />
+            <div className="absolute left-1/2 top-0 w-[2px] h-full bg-green-400 -translate-x-1/2 shadow-[0_0_4px_black]" />
+          </>
+        )}
+        <div className="absolute inset-0 transition-opacity duration-75" style={{ opacity: hitMarkerOpacity }}>
+          <div className="absolute top-1/2 left-0 w-full h-[2px] bg-white -translate-y-1/2 shadow-[0_0_4px_white]" />
+          <div className="absolute left-1/2 top-0 w-[2px] h-full bg-white -translate-x-1/2 shadow-[0_0_4px_white]" />
+        </div>
       </div>
 
       {/* SCOPE OVERLAY */}
@@ -564,19 +578,19 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         <div ref={weaponRef} className="absolute bottom-0 left-1/2 w-80 h-80 pointer-events-none z-20 origin-bottom flex items-end justify-center transition-transform duration-75">
           {uiState.player.weaponIndex === 0 ? (
             <div className="relative w-20 h-52 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-lg">
-                <div className="absolute top-0 w-full h-12 bg-neutral-800 rounded-t-md" />
-                <div className="absolute top-14 left-1/2 -translate-x-1/2 w-8 h-14 bg-black/40 rounded-full" />
-                {isShooting && <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-500/30 rounded-full blur-2xl animate-ping" />}
+              <div className="absolute top-0 w-full h-12 bg-neutral-800 rounded-t-md" />
+              <div className="absolute top-14 left-1/2 -translate-x-1/2 w-8 h-14 bg-black/40 rounded-full" />
+              {isShooting && <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-500/30 rounded-full blur-2xl animate-ping" />}
             </div>
           ) : (
             <div className="relative w-28 h-60 flex flex-col items-center">
-                 <div className="w-6 h-32 bg-neutral-800 border-x-2 border-neutral-700 -mb-4 z-0" />
-                 <div className="relative w-24 h-44 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-xl z-10 overflow-hidden">
-                    <div className="absolute top-0 w-full h-16 bg-neutral-800 border-b-2 border-neutral-700" />
-                    <div className="absolute top-20 left-1/2 -translate-x-1/2 w-12 h-20 bg-black/60 rounded-md" />
-                    <div className="absolute top-4 right-2 w-4 h-8 bg-green-500/20 rounded" />
-                 </div>
-                 {isShooting && <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-orange-500/30 rounded-full blur-3xl animate-pulse" />}
+              <div className="w-6 h-32 bg-neutral-800 border-x-2 border-neutral-700 -mb-4 z-0" />
+              <div className="relative w-24 h-44 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-xl z-10 overflow-hidden">
+                <div className="absolute top-0 w-full h-16 bg-neutral-800 border-b-2 border-neutral-700" />
+                <div className="absolute top-20 left-1/2 -translate-x-1/2 w-12 h-20 bg-black/60 rounded-md" />
+                <div className="absolute top-4 right-2 w-4 h-8 bg-green-500/20 rounded" />
+              </div>
+              {isShooting && <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-orange-500/30 rounded-full blur-3xl animate-pulse" />}
             </div>
           )}
         </div>
@@ -584,44 +598,44 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
       {/* PAUSE & GAMEOVER */}
       {isPaused && (
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center z-50">
-              <h2 className="text-white font-mono text-5xl font-black mb-10 tracking-[0.2em]">TERMINAL PAUSE</h2>
-              <div className="flex flex-col gap-6 w-72 mb-10 text-white">
-                  <div className="flex flex-col gap-2">
-                      <div className="flex justify-between font-mono text-[10px] text-white/40 uppercase tracking-widest">
-                          <span>Aim Sensitivity</span>
-                          <span>{sensitivity.toFixed(1)}x</span>
-                      </div>
-                      <input 
-                          type="range" 
-                          min="0.1" 
-                          max="3.0" 
-                          step="0.1" 
-                          value={sensitivity} 
-                          onChange={(e) => setSensitivity(parseFloat(e.target.value))} 
-                          className="w-full accent-green-500 bg-white/10 h-1 rounded-full appearance-none cursor-pointer" 
-                      />
-                  </div>
-                  
-                  {/* Restored: Infinite Ammo Toggle Button */}
-                  <button 
-                      onClick={() => setIsInfiniteAmmo(!isInfiniteAmmo)} 
-                      className={`w-full py-4 font-mono font-black uppercase tracking-widest border transition-all ${isInfiniteAmmo ? 'bg-green-600 border-green-400 text-white' : 'border-white/20 text-white/60 hover:border-white/40'}`}
-                  >
-                      Ammo: {isInfiniteAmmo ? 'Infinite' : 'Limited'}
-                  </button>
-
-                  <button onClick={() => setIsPaused(false)} className="py-4 bg-white text-black font-mono font-black uppercase tracking-widest hover:bg-neutral-200 transition-colors">Resume</button>
-                  <button onClick={onExit} className="py-4 border-2 border-white text-white font-mono font-black uppercase tracking-widest hover:bg-white hover:text-black transition-all">Abort Mission</button>
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center z-50">
+          <h2 className="text-white font-mono text-5xl font-black mb-10 tracking-[0.2em]">TERMINAL PAUSE</h2>
+          <div className="flex flex-col gap-6 w-72 mb-10 text-white">
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-between font-mono text-[10px] text-white/40 uppercase tracking-widest">
+                <span>Aim Sensitivity</span>
+                <span>{sensitivity.toFixed(1)}x</span>
               </div>
+              <input
+                type="range"
+                min="0.1"
+                max="3.0"
+                step="0.1"
+                value={sensitivity}
+                onChange={(e) => setSensitivity(parseFloat(e.target.value))}
+                className="w-full accent-green-500 bg-white/10 h-1 rounded-full appearance-none cursor-pointer"
+              />
+            </div>
+
+            {/* Restored: Infinite Ammo Toggle Button */}
+            <button
+              onClick={() => setIsInfiniteAmmo(!isInfiniteAmmo)}
+              className={`w-full py-4 font-mono font-black uppercase tracking-widest border transition-all ${isInfiniteAmmo ? 'bg-green-600 border-green-400 text-white' : 'border-white/20 text-white/60 hover:border-white/40'}`}
+            >
+              Ammo: {isInfiniteAmmo ? 'Infinite' : 'Limited'}
+            </button>
+
+            <button onClick={() => setIsPaused(false)} className="py-4 bg-white text-black font-mono font-black uppercase tracking-widest hover:bg-neutral-200 transition-colors">Resume</button>
+            <button onClick={onExit} className="py-4 border-2 border-white text-white font-mono font-black uppercase tracking-widest hover:bg-white hover:text-black transition-all">Abort Mission</button>
           </div>
+        </div>
       )}
 
       {isGameOver && (
-          <div className="absolute inset-0 bg-black flex flex-col items-center justify-center z-50">
-              <h1 className="text-7xl font-black text-red-600 font-mono mb-12">MISSION FAILED</h1>
-              <button onClick={restartGame} className="px-12 py-5 bg-red-600 text-white font-mono font-black uppercase tracking-widest">Redeploy</button>
-          </div>
+        <div className="absolute inset-0 bg-black flex flex-col items-center justify-center z-50">
+          <h1 className="text-7xl font-black text-red-600 font-mono mb-12">MISSION FAILED</h1>
+          <button onClick={restartGame} className="px-12 py-5 bg-red-600 text-white font-mono font-black uppercase tracking-widest">Redeploy</button>
+        </div>
       )}
     </div>
   );

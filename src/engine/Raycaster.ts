@@ -9,7 +9,7 @@ export class Raycaster {
   private offscreenCtx: CanvasRenderingContext2D;
   private imageData: ImageData;
   private buffer: Uint32Array;
-  
+
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
@@ -26,7 +26,8 @@ export class Raycaster {
     ctx: CanvasRenderingContext2D,
     gameState: GameState,
     textures: Record<number, Texture[]>,
-    isShooting: boolean = false
+    isShooting: boolean = false,
+    zoom: number = 1.0
   ) {
     const { player, map, enemies, items, particles, decals } = gameState;
     const w = this.width;
@@ -34,44 +35,48 @@ export class Raycaster {
     const time = performance.now();
 
     // 1. Floor and Ceiling Casting (Raw Buffer manipulation for performance)
-    this.castFloorAndCeiling(player, textures, w, h);
+    this.castFloorAndCeiling(player, textures, w, h, zoom);
 
     // Apply pixel buffer to offscreen canvas
     this.offscreenCtx.putImageData(this.imageData, 0, 0);
 
     // 2. Wall Casting
-    this.castWalls(this.offscreenCtx, player, map, textures, decals, w, h, time);
+    this.castWalls(this.offscreenCtx, player, map, textures, decals, w, h, time, zoom);
 
     // 3. Sprite Casting
     const allSprites = [...enemies, ...items, ...particles];
-    this.castSprites(this.offscreenCtx, player, allSprites, textures, w, h);
+    this.castSprites(this.offscreenCtx, player, allSprites, textures, w, h, zoom);
 
     // 4. Muzzle Flash Lighting
     if (isShooting) {
-        this.offscreenCtx.fillStyle = 'rgba(255, 255, 200, 0.15)';
-        this.offscreenCtx.fillRect(0, 0, w, h);
+      this.offscreenCtx.fillStyle = 'rgba(255, 255, 200, 0.15)';
+      this.offscreenCtx.fillRect(0, 0, w, h);
     }
 
     // Draw final output to main canvas
     ctx.drawImage(this.offscreenCanvas, 0, 0);
   }
 
-  private castFloorAndCeiling(player: Player, textures: Record<number, Texture[]>, w: number, h: number) {
+  private castFloorAndCeiling(player: Player, textures: Record<number, Texture[]>, w: number, h: number, zoom: number) {
     const floorTexture = textures[CellType.FLOOR][0];
     const ceilingTexture = textures[CellType.CEILING][0];
     if (!floorTexture || !ceilingTexture) return;
 
+    const wallHeight = 1.0;
+    const camHeight = 0.5 + player.z;
     const pitch = player.pitch;
     const playerZ = 0.5 + player.z;
 
     for (let y = 0; y < h; y++) {
       const isFloor = y > h / 2 + pitch;
       const p = isFloor ? (y - h / 2 - pitch) : (h / 2 - y + pitch);
-      
+
       if (p === 0) continue;
 
-      const camZ = h * playerZ;
-      const rowDistance = camZ / p;
+      // Correct perspective: 
+      const zDiff = isFloor ? camHeight : (wallHeight - camHeight);
+      // Apply Zoom to vertical distance calculation
+      const rowDistance = (h * zDiff * zoom) / p;
 
       const floorStepX = rowDistance * (player.plane.x * 2) / w;
       const floorStepY = rowDistance * (player.plane.y * 2) / w;
@@ -79,7 +84,7 @@ export class Raycaster {
       let floorX = player.pos.x + rowDistance * (player.dir.x - player.plane.x);
       let floorY = player.pos.y + rowDistance * (player.dir.y - player.plane.y);
 
-      const fogDistance = 20.0; 
+      const fogDistance = 20.0;
       const fogAmount = Math.min(1, rowDistance / fogDistance);
 
       for (let x = 0; x < w; x++) {
@@ -90,11 +95,11 @@ export class Raycaster {
         let color = isFloor ? floorTexture.data[texIndex] : ceilingTexture.data[texIndex];
 
         if (fogAmount > 0) {
-            const fogFactor = 1 - fogAmount * 0.7; 
-            const r = (color & 0xFF) * fogFactor;
-            const g = ((color >> 8) & 0xFF) * fogFactor;
-            const b = ((color >> 16) & 0xFF) * fogFactor;
-            color = (color & 0xFF000000) | (b << 16) | (g << 8) | r;
+          const fogFactor = 1 - fogAmount * 0.7;
+          const r = (color & 0xFF) * fogFactor;
+          const g = ((color >> 8) & 0xFF) * fogFactor;
+          const b = ((color >> 16) & 0xFF) * fogFactor;
+          color = (color & 0xFF000000) | (b << 16) | (g << 8) | r;
         }
 
         this.buffer[y * w + x] = color;
@@ -106,17 +111,20 @@ export class Raycaster {
   }
 
   private castWalls(
-    ctx: CanvasRenderingContext2D, 
-    player: Player, 
-    map: number[][], 
+    ctx: CanvasRenderingContext2D,
+    player: Player,
+    map: number[][],
     textures: Record<number, Texture[]>,
     decals: Decal[],
-    w: number, 
+    w: number,
     h: number,
-    time: number
+    time: number,
+    zoom: number
   ) {
+    const camHeight = 0.5 + player.z;
+
     for (let x = 0; x < w; x++) {
-      const cameraX = 2 * x / w - 1; 
+      const cameraX = 2 * x / w - 1;
       const rayDirX = player.dir.x + player.plane.x * cameraX;
       const rayDirY = player.dir.y + player.plane.y * cameraX;
 
@@ -164,11 +172,17 @@ export class Raycaster {
       const perpWallDist = side === 0 ? (sideDistX - deltaDistX) : (sideDistY - deltaDistY);
       this.zBuffer[x] = perpWallDist;
 
-      const lineHeight = Math.floor(h / perpWallDist);
-      const playerHeightOffset = (player.z * h) / perpWallDist;
-      
-      const drawStart = -lineHeight / 2 + h / 2 + player.pitch + playerHeightOffset;
-      const drawEnd = lineHeight / 2 + h / 2 + player.pitch + playerHeightOffset;
+      // Apply Zoom to Wall Scale
+      const scale = (h / perpWallDist) * zoom;
+
+      // Fixed Wall Height (Standard)
+      const wallHeight = 1.0;
+
+      // Perspective Projection:
+      const drawStart = (h / 2) + player.pitch - (wallHeight - camHeight) * scale;
+      const drawEnd = (h / 2) + player.pitch + (camHeight) * scale;
+
+      const lineHeight = drawEnd - drawStart;
 
       const texFrames = textures[wallType] || textures[1];
       const frameIdx = texFrames.length > 1 ? Math.floor(time / 200) % texFrames.length : 0;
@@ -186,28 +200,28 @@ export class Raycaster {
 
       if (clippedEnd > clippedStart) {
         ctx.drawImage(
-            texture.image, 
-            texX, 0, 1, texture.height, 
-            x, clippedStart, 1, clippedEnd - clippedStart 
+          texture.image,
+          texX, 0, 1, texture.height,
+          x, clippedStart, 1, clippedEnd - clippedStart
         );
 
         if (side === 1) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'; 
-            ctx.fillRect(x, clippedStart, 1, clippedEnd - clippedStart);
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+          ctx.fillRect(x, clippedStart, 1, clippedEnd - clippedStart);
         }
 
         const sliceDecals = decals.filter(d => d.mapX === mapX && d.mapY === mapY && d.side === side && Math.abs(d.wallX - wallX) < 0.01);
         sliceDecals.forEach(d => {
-            const decalY = drawStart + d.wallY * lineHeight;
-            ctx.fillStyle = `rgba(30, 30, 30, ${d.life})`;
-            ctx.fillRect(x, decalY - 2, 1, 4);
+          const decalY = drawStart + d.wallY * lineHeight;
+          ctx.fillStyle = `rgba(30, 30, 30, ${d.life})`;
+          ctx.fillRect(x, decalY - 2, 1, 4);
         });
 
         const fogDistance = 18.0;
         const fogAmount = Math.min(1, perpWallDist / fogDistance);
         if (fogAmount > 0) {
-            ctx.fillStyle = `rgba(30, 30, 40, ${fogAmount * 0.6})`; 
-            ctx.fillRect(x, clippedStart, 1, clippedEnd - clippedStart);
+          ctx.fillStyle = `rgba(30, 30, 40, ${fogAmount * 0.6})`;
+          ctx.fillRect(x, clippedStart, 1, clippedEnd - clippedStart);
         }
       }
     }
@@ -219,57 +233,61 @@ export class Raycaster {
     sprites: any[],
     textures: Record<number, Texture[]>,
     w: number,
-    h: number
+    h: number,
+    zoom: number
   ) {
     const spriteOrder = sprites
       .map((sprite) => {
         const dist = (player.pos.x - sprite.pos.x) ** 2 + (player.pos.y - sprite.pos.y) ** 2;
         return { sprite, dist };
       })
-      .sort((a, b) => b.dist - a.dist); 
+      .sort((a, b) => b.dist - a.dist);
 
     for (const item of spriteOrder) {
-        const { sprite, dist } = item;
-        const spriteX = sprite.pos.x - player.pos.x;
-        const spriteY = sprite.pos.y - player.pos.y;
-        const invDet = 1.0 / (player.plane.x * player.dir.y - player.dir.x * player.plane.y);
-        
-        const transformX = invDet * (player.dir.y * spriteX - player.dir.x * spriteY);
-        const transformY = invDet * (-player.plane.y * spriteX + player.plane.x * spriteY); 
+      const { sprite, dist } = item;
+      const spriteX = sprite.pos.x - player.pos.x;
+      const spriteY = sprite.pos.y - player.pos.y;
+      const invDet = 1.0 / (player.plane.x * player.dir.y - player.dir.x * player.plane.y);
 
-        if (transformY <= 0) continue;
+      const transformX = invDet * (player.dir.y * spriteX - player.dir.x * spriteY);
+      const transformY = invDet * (-player.plane.y * spriteX + player.plane.x * spriteY);
 
-        const spriteScreenX = Math.floor((w / 2) * (1 + transformX / transformY));
-        const spriteHeight = Math.abs(Math.floor(h / transformY)); 
-        const vOffset = player.pitch + (player.z * h) / transformY;
+      if (transformY <= 0) continue;
 
-        const drawStartY = -spriteHeight / 2 + h / 2 + vOffset;
-        const drawEndY = spriteHeight / 2 + h / 2 + vOffset;
+      const spriteScreenX = Math.floor((w / 2) * (1 + transformX / transformY));
 
-        const spriteWidth = Math.abs(Math.floor(h / transformY)); 
-        const drawStartX = Math.max(0, -spriteWidth / 2 + spriteScreenX);
-        const drawEndX = Math.min(w - 1, spriteWidth / 2 + spriteScreenX);
-        
-        const texture = textures[sprite.textureId]?.[0];
-        if (!texture) continue;
+      // Apply Zoom to Sprites
+      const spriteHeight = Math.abs(Math.floor(h / transformY)) * zoom;
+      const spriteWidth = Math.abs(Math.floor(h / transformY)) * zoom;
 
-        for (let stripe = Math.floor(drawStartX); stripe < Math.floor(drawEndX); stripe++) {
-            const texX = Math.floor((stripe - (-spriteWidth / 2 + spriteScreenX)) * texture.width / spriteWidth);
-            if (transformY > 0 && stripe > 0 && stripe < w && transformY < this.zBuffer[stripe]) {
-                const clippedYStart = Math.max(0, drawStartY);
-                const clippedYEnd = Math.min(h - 1, drawEndY);
+      const vOffset = player.pitch + (player.z * h * zoom) / transformY;
 
-                if (clippedYEnd > clippedYStart) {
-                    ctx.drawImage(
-                        texture.image,
-                        texX, 0, 1, texture.height,
-                        stripe, clippedYStart, 1, clippedYEnd - clippedYStart
-                    );
-                    
-                    // Fog was removed from here to eliminate the black border artifact around transparent sprite regions.
-                }
-            }
+      const drawStartY = -spriteHeight / 2 + h / 2 + vOffset;
+      const drawEndY = spriteHeight / 2 + h / 2 + vOffset;
+
+      const drawStartX = Math.max(0, -spriteWidth / 2 + spriteScreenX);
+      const drawEndX = Math.min(w - 1, spriteWidth / 2 + spriteScreenX);
+
+      const texture = textures[sprite.textureId]?.[0];
+      if (!texture) continue;
+
+      for (let stripe = Math.floor(drawStartX); stripe < Math.floor(drawEndX); stripe++) {
+        const texX = Math.floor((stripe - (-spriteWidth / 2 + spriteScreenX)) * texture.width / spriteWidth);
+        if (transformY > 0 && stripe > 0 && stripe < w && transformY < this.zBuffer[stripe]) {
+          const clippedYStart = Math.max(0, drawStartY);
+          const clippedYEnd = Math.min(h - 1, drawEndY);
+
+          if (clippedYEnd > clippedYStart) {
+            ctx.drawImage(
+              texture.image,
+              texX, 0, 1, texture.height,
+              stripe, clippedYStart, 1, clippedYEnd - clippedYStart
+            );
+
+            // Fog was removed from here to eliminate the black border artifact around transparent sprite regions.
+          }
         }
+      }
     }
   }
 }
