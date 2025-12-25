@@ -6,15 +6,15 @@ export interface Vector2 {
 
 export interface Player {
   pos: Vector2;
-  dir: Vector2;   
-  plane: Vector2; 
+  dir: Vector2;
+  plane: Vector2;
   health: number;
-  ammo: number;        
-  ammoReserve: number; 
-  z: number;           
-  vz: number;          
-  pitch: number;       
-  weaponIndex: number; 
+  ammo: number;
+  ammoReserve: number;
+  z: number;
+  vz: number;
+  pitch: number;
+  weaponIndex: number;
 }
 
 export const EnemyState = {
@@ -34,7 +34,7 @@ export interface Enemy {
   state: EnemyStateValue;
   health: number;
   textureId: number;
-  lastAttackTime: number; 
+  lastAttackTime: number;
   animationTimer: number;
 }
 
@@ -49,7 +49,7 @@ export interface Particle {
   id: number;
   pos: Vector2;
   textureId: number;
-  life: number;     
+  life: number;
   velocity: Vector2;
 }
 
@@ -82,7 +82,7 @@ export interface GameState {
 }
 
 export interface Texture {
-  image: HTMLCanvasElement; 
+  image: HTMLCanvasElement;
   data: Uint32Array; // Raw pixel data for floor casting
   width: number;
   height: number;

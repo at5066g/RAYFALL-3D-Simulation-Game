@@ -74,6 +74,8 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
   const walkCycle = useRef(0);
   const recoilImpulse = useRef(0);
+  const swayPos = useRef({ x: 0, y: 0 });
+  const swayTarget = useRef({ x: 0, y: 0 });
   const lastShotTime = useRef(0);
   const lastDryFireTime = useRef(0);
 
@@ -173,6 +175,13 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         player.pitch -= e.movementY * sensitivityY;
         const maxPitch = SCREEN_HEIGHT / 1.5;
         player.pitch = Math.max(-maxPitch, Math.min(maxPitch, player.pitch));
+
+        // Weapon Sway Input (Only when moving)
+        const isMoving = keys.current['KeyW'] || keys.current['KeyS'] || keys.current['KeyA'] || keys.current['KeyD'];
+        if (isMoving) {
+          swayTarget.current.x += e.movementX * 0.5;
+          swayTarget.current.y += e.movementY * 0.5;
+        }
       }
     };
 
@@ -350,8 +359,8 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
         setTimeout(() => setIsHeadshot(false), 200);
       }
       if (target.health <= 0) {
-        soundManager.current.playEnemyDeath();
-        stateRef.current.score += isHead ? 2 : 1;
+        soundManager.current.playEnemyDeath(target.pos);
+        stateRef.current.score += 100;
         stateRef.current.items.push({
           id: ++itemIdCounter.current,
           pos: { x: target.pos.x, y: target.pos.y },
@@ -360,7 +369,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
           spawnTime: performance.now()
         });
       } else {
-        soundManager.current.playEnemyHit();
+        soundManager.current.playEnemyHit(target.pos);
         target.state = EnemyState.CHASE;
       }
     }
@@ -406,11 +415,14 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
           if (map[Math.floor(enemy.pos.x)]?.[Math.floor(enemy.pos.y + dirY * moveStep)] === 0) enemy.pos.y += dirY * moveStep;
         }
 
-        if (dist <= ATTACK_RANGE) {
-          if (now - enemy.lastAttackTime > 1000) {
-            enemy.lastAttackTime = now;
-            player.health -= damageMelee;
+        // Enemy Shoot Logic & Audio
+        if (now - enemy.lastAttackTime > 1000 && Math.random() < 0.02) {
+          soundManager.current.playEnemyShoot(enemy.pos);
+          enemy.lastAttackTime = now;
+          // Simple hitscan vs player
+          if (Math.random() < 0.4) {
             soundManager.current.playPlayerDamage();
+            player.health -= 10;
           }
         } else if (dist < 9.0 && canSee) {
           if (now - enemy.lastAttackTime > shootCooldown) {
@@ -463,6 +475,50 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       player.z += player.vz * dt;
       if (player.z < 0) { player.z = 0; player.vz = 0; }
     }
+    // Movement Logic (Moved UP to be available for Sway)
+    let dx = 0, dy = 0;
+    if (keys.current['KeyW']) { dx += player.dir.x; dy += player.dir.y; }
+    if (keys.current['KeyS']) { dx -= player.dir.x; dy -= player.dir.y; }
+    if (keys.current['KeyA']) { dx -= player.dir.y; dy += player.dir.x; }
+    if (keys.current['KeyD']) { dx += player.dir.y; dy -= player.dir.x; }
+    const len = Math.sqrt(dx * dx + dy * dy);
+
+    // Weapon Sway Physics
+    const isMoving = len > 0;
+
+    if (!isMoving) {
+      // Hard stop logic: Force target to 0 immediately when stopped
+      swayTarget.current.x = 0;
+      swayTarget.current.y = 0;
+
+      // Fast decay for position to eliminate "vibration"
+      swayPos.current.x += (0 - swayPos.current.x) * 20 * dt;
+      swayPos.current.y += (0 - swayPos.current.y) * 20 * dt;
+
+      // Snap to zero if very small to prevent micro-jitter
+      if (Math.abs(swayPos.current.x) < 0.1) swayPos.current.x = 0;
+      if (Math.abs(swayPos.current.y) < 0.1) swayPos.current.y = 0;
+    } else {
+      // Normal decay when moving (allows build up)
+      swayTarget.current.x -= swayTarget.current.x * 10 * dt;
+      swayTarget.current.y -= swayTarget.current.y * 10 * dt;
+
+      // Smooth interpolation
+      swayPos.current.x += (swayTarget.current.x - swayPos.current.x) * 10 * dt;
+      swayPos.current.y += (swayTarget.current.y - swayPos.current.y) * 10 * dt;
+    }
+
+    // Clamp sway
+    const maxSway = 40;
+    swayPos.current.x = Math.max(-maxSway, Math.min(maxSway, swayPos.current.x));
+    swayPos.current.y = Math.max(-maxSway, Math.min(maxSway, swayPos.current.y));
+
+    // Audio Listener Update relative to player
+    // Calculate player angle from dir vector
+    const playerAngle = Math.atan2(player.dir.y, player.dir.x);
+    soundManager.current.updateListener(player.pos.x, player.pos.y, playerAngle);
+
+    // Zoom Logic
     const targetFov = isZooming.current ? 0.33 : FOV; // 0.33 = 2x Zoom (0.66 / 2)
     currentFovScale.current += (targetFov - currentFovScale.current) * 8.0 * dt;
     player.plane.x = player.dir.y * currentFovScale.current;
@@ -479,12 +535,6 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       }
     }
 
-    let dx = 0, dy = 0;
-    if (keys.current['KeyW']) { dx += player.dir.x; dy += player.dir.y; }
-    if (keys.current['KeyS']) { dx -= player.dir.x; dy -= player.dir.y; }
-    if (keys.current['KeyA']) { dx -= player.dir.y; dy += player.dir.x; }
-    if (keys.current['KeyD']) { dx += player.dir.y; dy -= player.dir.x; }
-    const len = Math.sqrt(dx * dx + dy * dy);
     if (len > 0) {
       const move = (MOVE_SPEED * dt) / len;
       if (map[Math.floor(player.pos.x + dx * move)]?.[Math.floor(player.pos.y)] === 0) player.pos.x += dx * move;
@@ -493,8 +543,16 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
     }
     if (recoilImpulse.current > 0) recoilImpulse.current = Math.max(0, recoilImpulse.current - dt * 8);
     if (weaponRef.current) {
-      const bob = len > 0 && player.z === 0 ? Math.sin(walkCycle.current) * 10 : 0;
-      weaponRef.current.style.transform = `translateX(-50%) translateY(${25 + Math.abs(bob) + recoilImpulse.current * 45}px) scale(${isZooming.current ? 1.15 : 1})`;
+      const bobY = len > 0 && player.z === 0 ? Math.sin(walkCycle.current * 1.5) * 8 : 0;
+      const bobX = len > 0 && player.z === 0 ? Math.cos(walkCycle.current * 0.75) * 6 : 0;
+
+      // Combine Sway + Bobbing + Recoil
+      weaponRef.current.style.transform = `
+        translateX(calc(-50% + ${-swayPos.current.x + bobX}px)) 
+        translateY(${25 + Math.abs(bobY) + swayPos.current.y + (Math.abs(swayPos.current.x) * 0.3) + recoilImpulse.current * 45}px) 
+        rotate(${-swayPos.current.x * 0.5 + bobX * 0.5}deg) 
+        scale(${isZooming.current ? 1.15 : 1})
+      `;
     }
   };
 
@@ -575,7 +633,16 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
       {/* Weapon Rendering */}
       {!isScoped && (
-        <div ref={weaponRef} className="absolute bottom-0 left-1/2 w-80 h-80 pointer-events-none z-20 origin-bottom flex items-end justify-center transition-transform duration-75">
+        <div ref={weaponRef}
+          className="absolute bottom-0 left-1/2 w-80 h-80 pointer-events-none z-20 origin-bottom flex items-end justify-center transition-transform duration-75"
+          style={{
+            transform: `
+                  translateX(calc(-50% + ${-swayPos.current.x}px)) 
+                  translateY(${Math.abs(swayPos.current.x * 0.3) + swayPos.current.y}px)
+                  rotate(${-swayPos.current.x * 0.5}deg)
+                `
+          }}
+        >
           {uiState.player.weaponIndex === 0 ? (
             <div className="relative w-20 h-52 bg-neutral-900 border-x-4 border-neutral-800 shadow-2xl rounded-t-lg">
               <div className="absolute top-0 w-full h-12 bg-neutral-800 rounded-t-md" />

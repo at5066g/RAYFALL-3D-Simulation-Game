@@ -10,7 +10,7 @@ export class SoundManager {
 
   public init() {
     if (this.initialized) return;
-    
+
     try {
       this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       this.masterGain = this.ctx.createGain();
@@ -36,7 +36,7 @@ export class SoundManager {
 
     const t = ctx.currentTime;
     const duration = isAuto ? 0.08 : 0.15;
-    
+
     // 1. Noise Burst (The "Bang")
     const bufferSize = ctx.sampleRate * duration;
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
@@ -106,8 +106,8 @@ export class SoundManager {
     // 1. Mag Out (Slide friction)
     const magOutNoise = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
     const d1 = magOutNoise.getChannelData(0);
-    for(let i=0; i<d1.length; i++) d1[i] = Math.random() * 2 - 1;
-    
+    for (let i = 0; i < d1.length; i++) d1[i] = Math.random() * 2 - 1;
+
     const src1 = ctx.createBufferSource();
     src1.buffer = magOutNoise;
     const f1 = ctx.createBiquadFilter();
@@ -116,7 +116,7 @@ export class SoundManager {
     const g1 = ctx.createGain();
     g1.gain.setValueAtTime(0.3, t);
     g1.gain.linearRampToValueAtTime(0, t + 0.2);
-    
+
     src1.connect(f1); f1.connect(g1); g1.connect(this.masterGain);
     src1.start(t);
 
@@ -129,13 +129,13 @@ export class SoundManager {
     const g2 = ctx.createGain();
     g2.gain.setValueAtTime(0.4, t2);
     g2.gain.exponentialRampToValueAtTime(0.01, t2 + 0.1);
-    
+
     osc2.connect(g2); g2.connect(this.masterGain);
     osc2.start(t2); osc2.stop(t2 + 0.1);
 
     // 3. Slide Rack (Click-Clack) - Delay 1.5s
     const t3 = t + 1.5;
-    
+
     // Part A: Click
     const osc3a = ctx.createOscillator();
     osc3a.type = 'sawtooth';
@@ -160,27 +160,83 @@ export class SoundManager {
   }
 
   public playAmmoPickup() {
-     const ctx = this.getContext();
-     if (!ctx || !this.masterGain) return;
-     const t = ctx.currentTime;
+    const ctx = this.getContext();
+    if (!ctx || !this.masterGain) return;
+    const t = ctx.currentTime;
 
-     // Metallic clink
-     const osc = ctx.createOscillator();
-     osc.type = 'square';
-     osc.frequency.setValueAtTime(800, t);
-     osc.frequency.exponentialRampToValueAtTime(200, t + 0.1);
+    // Metallic clink
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(800, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + 0.1);
 
-     const gain = ctx.createGain();
-     gain.gain.setValueAtTime(0.2, t);
-     gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
-     
-     osc.connect(gain);
-     gain.connect(this.masterGain);
-     osc.start(t);
-     osc.stop(t + 0.1);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.1);
   }
 
-  public playEnemyShoot() {
+
+  /* SPATIAL AUDIO HELPERS */
+
+  public updateListener(x: number, y: number, angle: number) {
+    const ctx = this.getContext();
+    if (!ctx || !this.initialized) return;
+
+    // Web Audio API uses a right-handed coordinate system.
+    // We map: Game X -> Audio X, Game Y -> Audio Z (depth), Z -> Y (height, usually 0)
+    const listener = ctx.listener;
+
+    // Position
+    if (listener.positionX) {
+      listener.positionX.value = x;
+      listener.positionY.value = 0;
+      listener.positionZ.value = y;
+    } else {
+      listener.setPosition(x, 0, y);
+    }
+
+    // Orientation
+    // Game angle is likely 0 = North (or East?), we need to convert to forward vector
+    // Standard: X=sin(a), Z=cos(a) depending on coordinate system
+    // Assuming standard FPS: X is left/right, Y is depth.
+    const fwdX = Math.cos(angle);
+    const fwdZ = Math.sin(angle);
+
+    if (listener.forwardX) {
+      listener.forwardX.value = fwdX;
+      listener.forwardY.value = 0;
+      listener.forwardZ.value = fwdZ;
+      listener.upX.value = 0;
+      listener.upY.value = 1;
+      listener.upZ.value = 0;
+    } else {
+      listener.setOrientation(fwdX, 0, fwdZ, 0, 1, 0);
+    }
+  }
+
+  private createPanner(x: number, y: number): PannerNode | null {
+    const ctx = this.getContext();
+    if (!ctx) return null;
+
+    const panner = ctx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 2.0;
+    panner.maxDistance = 50.0;
+    panner.rolloffFactor = 1.0;
+    panner.positionX.value = x;
+    panner.positionY.value = 0;
+    panner.positionZ.value = y;
+
+    return panner;
+  }
+
+  public playEnemyShoot(pos: { x: number, y: number } | null = null) {
     const ctx = this.getContext();
     if (!ctx || !this.masterGain) return;
     const t = ctx.currentTime;
@@ -198,15 +254,28 @@ export class SoundManager {
 
     const noiseFilter = ctx.createBiquadFilter();
     noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.setValueAtTime(800, t); // Higher pitch than player
+    noiseFilter.frequency.setValueAtTime(800, t);
 
     const noiseGain = ctx.createGain();
     noiseGain.gain.setValueAtTime(0.6, t);
     noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
 
+    // Graph Connection
     noise.connect(noiseFilter);
     noiseFilter.connect(noiseGain);
-    noiseGain.connect(this.masterGain);
+
+    if (pos) {
+      const panner = this.createPanner(pos.x, pos.y);
+      if (panner) {
+        noiseGain.connect(panner);
+        panner.connect(this.masterGain);
+      } else {
+        noiseGain.connect(this.masterGain);
+      }
+    } else {
+      noiseGain.connect(this.masterGain);
+    }
+
     noise.start(t);
   }
 
@@ -231,7 +300,7 @@ export class SoundManager {
     osc.stop(t + 0.3);
   }
 
-  public playEnemyHit() {
+  public playEnemyHit(pos: { x: number, y: number } | null = null) {
     const ctx = this.getContext();
     if (!ctx || !this.masterGain) return;
     const t = ctx.currentTime;
@@ -246,13 +315,26 @@ export class SoundManager {
     gain.gain.setValueAtTime(0.3, t);
     gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
 
-    osc.connect(gain);
-    gain.connect(this.masterGain);
+    if (pos) {
+      const panner = this.createPanner(pos.x, pos.y);
+      if (panner) {
+        osc.connect(gain);
+        gain.connect(panner);
+        panner.connect(this.masterGain);
+      } else {
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+      }
+    } else {
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+    }
+
     osc.start(t);
     osc.stop(t + 0.1);
   }
 
-  public playEnemyDeath() {
+  public playEnemyDeath(pos: { x: number, y: number } | null = null) {
     const ctx = this.getContext();
     if (!ctx || !this.masterGain) return;
     const t = ctx.currentTime;
@@ -273,8 +355,19 @@ export class SoundManager {
 
     osc.connect(shaper);
     shaper.connect(gain);
-    gain.connect(this.masterGain);
-    
+
+    if (pos) {
+      const panner = this.createPanner(pos.x, pos.y);
+      if (panner) {
+        gain.connect(panner);
+        panner.connect(this.masterGain);
+      } else {
+        gain.connect(this.masterGain);
+      }
+    } else {
+      gain.connect(this.masterGain);
+    }
+
     osc.start(t);
     osc.stop(t + 0.6);
   }
@@ -298,17 +391,17 @@ export class SoundManager {
     gain.connect(this.masterGain);
     osc.start(t);
     osc.stop(t + 0.2);
-    
+
     // Sparkle layer
     const osc2 = ctx.createOscillator();
     osc2.type = 'triangle';
     osc2.frequency.setValueAtTime(1200, t);
     osc2.frequency.linearRampToValueAtTime(2000, t + 0.3);
-    
+
     const gain2 = ctx.createGain();
     gain2.gain.setValueAtTime(0.1, t);
     gain2.gain.linearRampToValueAtTime(0, t + 0.3);
-    
+
     osc2.connect(gain2);
     gain2.connect(this.masterGain);
     osc2.start(t);
@@ -323,7 +416,7 @@ export class SoundManager {
     const osc = ctx.createOscillator();
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(100, t);
-    
+
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.1, t);
     gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
