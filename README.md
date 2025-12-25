@@ -11,7 +11,7 @@
 - **Direct Pixel Manipulation**: High-performance rendering using `Uint32Array` buffers to bypass slow Canvas API calls.
 - **Z-Buffering**: Accurate sprite-to-wall depth testing for proper occlusion of enemies and items.
 - **Verticality**: Support for jumping, gravity, and camera pitch (looking up/down).
-- **Floor & Ceiling Casting**: Performance-optimized horizontal plane rendering with distance-based fog.
+- **Floor & Ceiling Casting**: Performance-optimized horizontal plane rendering with distance-based fogg.
 
 ### Gameplay
 - **Tactical Combat**: Semi-auto and automatic weapons with recoil, fire rates, and headshot multipliers.
