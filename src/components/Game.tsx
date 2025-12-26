@@ -84,7 +84,12 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
   const [isGameOver, setIsGameOver] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [hitMarkerOpacity, setHitMarkerOpacity] = useState(0);
+  const hitMarkerOpacityRef = useRef(0); // Ref for game loop access
+
   const [isHeadshot, setIsHeadshot] = useState(false);
+
+  const [damageFlash, setDamageFlash] = useState(0);
+  const damageFlashRef = useRef(0); // Ref for game loop access
 
   const [sensitivity, setSensitivity] = useState(1.0);
   const [isInfiniteAmmo, setIsInfiniteAmmo] = useState(false);
@@ -354,6 +359,7 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
       const isHead = hitRelativeY < 0.25;
       target.health -= isHead ? (weapon.damage * weapon.headshotMultiplier) : weapon.damage;
       setHitMarkerOpacity(1.0);
+      hitMarkerOpacityRef.current = 1.0; // Sync Ref
       if (isHead) {
         setIsHeadshot(true);
         setTimeout(() => setIsHeadshot(false), 200);
@@ -423,11 +429,15 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
           if (Math.random() < 0.4) {
             soundManager.current.playPlayerDamage();
             player.health -= 10;
+            damageFlashRef.current = 0.8; // Trigger Flash via Ref
+            setDamageFlash(0.8); // Trigger Flash
           }
         } else if (dist < 9.0 && canSee) {
           if (now - enemy.lastAttackTime > shootCooldown) {
             enemy.lastAttackTime = now;
             player.health -= damageRanged;
+            damageFlashRef.current = 0.8; // Trigger Flash via Ref
+            setDamageFlash(0.8); // Trigger Flash
             soundManager.current.playEnemyShoot();
             soundManager.current.playPlayerDamage();
           }
@@ -445,7 +455,14 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
 
     if (isMouseDown.current && WEAPONS[stateRef.current.player.weaponIndex].isAuto) shoot();
 
-    if (hitMarkerOpacity > 0) setHitMarkerOpacity(prev => Math.max(0, prev - dt * 4));
+    if (hitMarkerOpacityRef.current > 0) {
+      hitMarkerOpacityRef.current = Math.max(0, hitMarkerOpacityRef.current - dt * 2.0);
+      setHitMarkerOpacity(hitMarkerOpacityRef.current);
+    }
+    if (damageFlashRef.current > 0) {
+      damageFlashRef.current = Math.max(0, damageFlashRef.current - dt * 1.3);
+      setDamageFlash(damageFlashRef.current);
+    }
     if (stateRef.current.player.health > 0) {
       updatePhysics(dt);
       updateAI(dt, time);
@@ -618,6 +635,15 @@ export const Game: React.FC<GameProps> = ({ difficulty, onExit }) => {
           <div className="absolute left-1/2 top-0 w-[2px] h-full bg-white -translate-x-1/2 shadow-[0_0_4px_white]" />
         </div>
       </div>
+
+      {/* DAMAGE FLASH VIGNETTE */}
+      <div
+        className="absolute inset-0 pointer-events-none z-10 transition-opacity duration-75"
+        style={{
+          opacity: damageFlash,
+          boxShadow: 'inset 0 0 150px 50px rgba(220, 20, 60, 0.9)'
+        }}
+      />
 
       {/* SCOPE OVERLAY */}
       {isScoped && (
