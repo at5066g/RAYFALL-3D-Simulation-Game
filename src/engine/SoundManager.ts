@@ -30,52 +30,89 @@ export class SoundManager {
     return this.ctx;
   }
 
+  // Helper for distortion
+  private makeDistortionCurve(amount: number) {
+    const k = typeof amount === 'number' ? amount : 50;
+    const n_samples = 44100;
+    const curve = new Float32Array(n_samples);
+    const deg = Math.PI / 180;
+    for (let i = 0; i < n_samples; ++i) {
+      const x = i * 2 / n_samples - 1;
+      curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+    }
+    return curve;
+  }
+
   public playShoot(isAuto: boolean = false) {
     const ctx = this.getContext();
     if (!ctx || !this.masterGain) return;
 
     const t = ctx.currentTime;
-    const duration = isAuto ? 0.08 : 0.15;
+    const duration = isAuto ? 0.12 : 0.25;
 
-    // 1. Noise Burst (The "Bang")
+    // --- LAYER 1: THE BODY (Low Impact) ---
+    const kickOsc = ctx.createOscillator();
+    kickOsc.type = 'triangle';
+    kickOsc.frequency.setValueAtTime(150, t);
+    kickOsc.frequency.exponentialRampToValueAtTime(40, t + 0.08);
+
+    const kickGain = ctx.createGain();
+    kickGain.gain.setValueAtTime(0.8, t);
+    kickGain.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+
+    kickOsc.connect(kickGain);
+    kickGain.connect(this.masterGain);
+    kickOsc.start(t);
+    kickOsc.stop(t + 0.1);
+
+    // --- LAYER 2: THE EXPLOSION (Distorted Noise) ---
     const bufferSize = ctx.sampleRate * duration;
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
+      data[i] = (Math.random() * 2 - 1);
     }
-
     const noise = ctx.createBufferSource();
     noise.buffer = buffer;
 
     const noiseFilter = ctx.createBiquadFilter();
     noiseFilter.type = 'lowpass';
-    noiseFilter.frequency.setValueAtTime(isAuto ? 1500 : 1000, t);
-    noiseFilter.frequency.exponentialRampToValueAtTime(100, t + duration);
+    noiseFilter.frequency.setValueAtTime(3000, t); // Open filter
+    noiseFilter.frequency.exponentialRampToValueAtTime(500, t + duration * 0.5);
+
+    // Distortion for "Grit"
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = this.makeDistortionCurve(isAuto ? 200 : 400); // Heavy distortion
 
     const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(isAuto ? 0.6 : 0.8, t);
+    noiseGain.gain.setValueAtTime(0.8, t);
     noiseGain.gain.exponentialRampToValueAtTime(0.01, t + duration);
 
     noise.connect(noiseFilter);
-    noiseFilter.connect(noiseGain);
+    noiseFilter.connect(shaper);
+    shaper.connect(noiseGain);
     noiseGain.connect(this.masterGain);
     noise.start(t);
 
-    // 2. Punch (Low sine wave drop)
-    const osc = ctx.createOscillator();
-    osc.type = isAuto ? 'sawtooth' : 'square';
-    osc.frequency.setValueAtTime(isAuto ? 200 : 150, t);
-    osc.frequency.exponentialRampToValueAtTime(40, t + duration * 0.8);
+    // --- LAYER 3: MECHANICAL CLACK (High Mid) ---
+    const mechOsc = ctx.createOscillator();
+    mechOsc.type = 'sawtooth';
+    mechOsc.frequency.setValueAtTime(600, t);
+    mechOsc.frequency.exponentialRampToValueAtTime(100, t + 0.05);
 
-    const oscGain = ctx.createGain();
-    oscGain.gain.setValueAtTime(isAuto ? 0.3 : 0.5, t);
-    oscGain.gain.exponentialRampToValueAtTime(0.01, t + duration * 0.8);
+    const mechGain = ctx.createGain();
+    mechGain.gain.setValueAtTime(0.3, t);
+    mechGain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
 
-    osc.connect(oscGain);
-    oscGain.connect(this.masterGain);
-    osc.start(t);
-    osc.stop(t + duration * 0.8);
+    const mechFilter = ctx.createBiquadFilter();
+    mechFilter.type = 'highpass';
+    mechFilter.frequency.value = 1000;
+
+    mechOsc.connect(mechFilter);
+    mechFilter.connect(mechGain);
+    mechGain.connect(this.masterGain);
+    mechOsc.start(t);
+    mechOsc.stop(t + 0.06);
   }
 
   public playDryFire() {
@@ -427,15 +464,5 @@ export class SoundManager {
     osc.stop(t + 0.05);
   }
 
-  private makeDistortionCurve(amount: number) {
-    const k = typeof amount === 'number' ? amount : 50;
-    const n_samples = 44100;
-    const curve = new Float32Array(n_samples);
-    const deg = Math.PI / 180;
-    for (let i = 0; i < n_samples; ++i) {
-      const x = (i * 2) / n_samples - 1;
-      curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
-    }
-    return curve;
-  }
+
 }
